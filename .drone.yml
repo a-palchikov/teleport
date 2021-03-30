@@ -4506,7 +4506,7 @@ volumes:
 ################################################
 # Generated using dronegen, do not edit by hand!
 # Use 'make dronegen' to update.
-# Generated at dronegen/buildbox.go:50
+# Generated at dronegen/buildbox.go:53
 ################################################
 
 kind: pipeline
@@ -4958,6 +4958,6 @@ volumes:
       name: drone-s3-debrepo-pvc
 ---
 kind: signature
-hmac: 76eaa227639b8b81a7a0653389c884b660e9ba5009b576d9328a149552e14a1c
+hmac: c5e2e36eb6d332e5ee4311b94f15dad6e94a17d7fff6d5cc36abf25676d3517d
 
 ...
