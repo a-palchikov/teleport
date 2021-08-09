@@ -727,7 +727,7 @@ func (s *Server) handleDirectTCPIPRequest(ctx context.Context, ch ssh.Channel, r
 	// Create "direct-tcpip" channel from the remote host to the target host.
 	conn, err := s.remoteClient.Dial("tcp", scx.DstAddr)
 	if err != nil {
-		scx.Infof("Failed to connect to: %v: %v", scx.DstAddr, err)
+		scx.Log.Infof("Failed to connect to: %v: %v", scx.DstAddr, err)
 		return
 	}
 	defer conn.Close()
@@ -751,7 +751,7 @@ func (s *Server) handleDirectTCPIPRequest(ctx context.Context, ch ssh.Channel, r
 			Success: true,
 		},
 	}); err != nil {
-		scx.WithError(err).Warn("Failed to emit port forward event.")
+		scx.Log.WithError(err).Warn("Failed to emit port forward event.")
 	}
 
 	var wg sync.WaitGroup
@@ -760,7 +760,7 @@ func (s *Server) handleDirectTCPIPRequest(ctx context.Context, ch ssh.Channel, r
 	go func() {
 		defer wg.Done()
 		if _, err := io.Copy(ch, conn); err != nil {
-			scx.Warningf("failed proxying data for port forwarding connection: %v", err)
+			scx.Log.Warningf("failed proxying data for port forwarding connection: %v", err)
 		}
 		ch.Close()
 	}()
@@ -768,7 +768,7 @@ func (s *Server) handleDirectTCPIPRequest(ctx context.Context, ch ssh.Channel, r
 	go func() {
 		defer wg.Done()
 		if _, err := io.Copy(conn, ch); err != nil {
-			scx.Warningf("failed proxying data for port forwarding connection: %v", err)
+			scx.Log.Warningf("failed proxying data for port forwarding connection: %v", err)
 		}
 		conn.Close()
 	}()
@@ -845,13 +845,13 @@ func (s *Server) handleSessionChannel(ctx context.Context, nch ssh.NewChannel) {
 		err := scx.CreateOrJoinSession(s.sessionRegistry)
 		if err != nil {
 			errorMessage := fmt.Sprintf("unable to update context: %v", err)
-			scx.Errorf("%v", errorMessage)
+			scx.Log.Errorf("%v", errorMessage)
 
 			// Write the error to channel and close it.
 			s.stderrWrite(ch, errorMessage)
 			_, err := ch.SendRequest("exit-status", false, ssh.Marshal(struct{ C uint32 }{C: teleport.RemoteCommandFailure}))
 			if err != nil {
-				scx.Errorf("Failed to send exit status %v", errorMessage)
+				scx.Log.Errorf("Failed to send exit status %v", errorMessage)
 			}
 			return
 		}
@@ -859,12 +859,12 @@ func (s *Server) handleSessionChannel(ctx context.Context, nch ssh.NewChannel) {
 		select {
 		case result := <-scx.SubsystemResultCh:
 			// Subsystem has finished executing, close the channel and session.
-			scx.Debugf("Subsystem execution result: %v", result.Err)
+			scx.Log.Debugf("Subsystem execution result: %v", result.Err)
 			return
 		case req := <-in:
 			if req == nil {
 				// The client has closed or dropped the connection.
-				scx.Debugf("Client %v disconnected", s.sconn.RemoteAddr())
+				scx.Log.Debugf("Client %v disconnected", s.sconn.RemoteAddr())
 				return
 			}
 			if err := s.dispatch(ctx, ch, req, scx); err != nil {
@@ -873,17 +873,17 @@ func (s *Server) handleSessionChannel(ctx context.Context, nch ssh.NewChannel) {
 			}
 			if req.WantReply {
 				if err := req.Reply(true, nil); err != nil {
-					scx.Errorf("failed sending OK response on %q request: %v", req.Type, err)
+					scx.Log.Errorf("failed sending OK response on %q request: %v", req.Type, err)
 				}
 			}
 		case result := <-scx.ExecResultCh:
-			scx.Debugf("Exec request (%q) complete: %v", result.Command, result.Code)
+			scx.Log.Debugf("Exec request (%q) complete: %v", result.Command, result.Code)
 
 			// The exec process has finished and delivered the execution result, send
 			// the result back to the client, and close the session and channel.
 			_, err := ch.SendRequest("exit-status", false, ssh.Marshal(struct{ C uint32 }{C: uint32(result.Code)}))
 			if err != nil {
-				scx.Infof("Failed to send exit status for %v: %v", result.Command, err)
+				scx.Log.Infof("Failed to send exit status for %v: %v", result.Command, err)
 			}
 
 			return
@@ -894,7 +894,7 @@ func (s *Server) handleSessionChannel(ctx context.Context, nch ssh.NewChannel) {
 }
 
 func (s *Server) dispatch(ctx context.Context, ch ssh.Channel, req *ssh.Request, scx *srv.ServerContext) error {
-	scx.Debugf("Handling request %v, want reply %v.", req.Type, req.WantReply)
+	scx.Log.Debugf("Handling request %v, want reply %v.", req.Type, req.WantReply)
 
 	switch req.Type {
 	case sshutils.ExecRequest:
@@ -1175,7 +1175,7 @@ func (s *Server) handleSubsystem(ch ssh.Channel, req *ssh.Request, ctx *srv.Serv
 func (s *Server) handleEnv(ch ssh.Channel, req *ssh.Request, ctx *srv.ServerContext) error {
 	var e sshutils.EnvReqParams
 	if err := ssh.Unmarshal(req.Payload, &e); err != nil {
-		ctx.Error(err)
+		ctx.Log.Error(err)
 		return trace.Wrap(err, "failed to parse env request")
 	}
 

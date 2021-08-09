@@ -179,7 +179,7 @@ type ServerContext struct {
 	// ConnectionContext is the parent context which manages connection-level
 	// resources.
 	*sshutils.ConnectionContext
-	*log.Entry
+	Log log.FieldLogger
 
 	mu sync.RWMutex
 
@@ -301,10 +301,40 @@ func NewServerContext(ctx context.Context, parent *sshutils.ConnectionContext, s
 		return nil, nil, trace.Wrap(err)
 	}
 
+	authPref, err := srv.GetAccessPoint().GetAuthPreference(ctx)
+	if err != nil {
+		return nil, nil, trace.Wrap(err)
+	}
+	shouldDisconnectExpiredCert := identityContext.RoleSet.AdjustDisconnectExpiredCert(authPref.GetDisconnectExpiredCert())
+	var disconnectExpiredCert time.Time
+	if !identityContext.CertValidBefore.IsZero() && shouldDisconnectExpiredCert {
+		disconnectExpiredCert = identityContext.CertValidBefore
+	}
+
+	childID := int(atomic.AddInt32(&ctxID, int32(1)))
+	fields := log.Fields{
+		"local":        parent.ServerConn.LocalAddr(),
+		"remote":       parent.ServerConn.RemoteAddr(),
+		"login":        identityContext.Login,
+		"teleportUser": identityContext.TeleportUser,
+		"id":           childID,
+	}
+	if !disconnectExpiredCert.IsZero() {
+		fields["cert"] = disconnectExpiredCert
+	}
+	clientIdleTimeout := identityContext.RoleSet.AdjustClientIdleTimeout(netConfig.GetClientIdleTimeout())
+	if clientIdleTimeout != 0 {
+		fields["idle"] = clientIdleTimeout
+	}
+
 	cancelContext, cancel := context.WithCancel(ctx)
 	child := &ServerContext{
-		ConnectionContext:      parent,
-		id:                     int(atomic.AddInt32(&ctxID, int32(1))),
+		ConnectionContext: parent,
+		Log: log.WithFields(log.Fields{
+			trace.Component:       srv.Component(),
+			trace.ComponentFields: fields,
+		}),
+		id:                     childID,
 		env:                    make(map[string]string),
 		srv:                    srv,
 		ExecResultCh:           make(chan ExecResult, 10),
@@ -312,38 +342,10 @@ func NewServerContext(ctx context.Context, parent *sshutils.ConnectionContext, s
 		ClusterName:            parent.ServerConn.Permissions.Extensions[utils.CertTeleportClusterName],
 		SessionRecordingConfig: recConfig,
 		Identity:               identityContext,
-		clientIdleTimeout:      identityContext.RoleSet.AdjustClientIdleTimeout(netConfig.GetClientIdleTimeout()),
+		clientIdleTimeout:      clientIdleTimeout,
 		cancelContext:          cancelContext,
 		cancel:                 cancel,
 	}
-
-	authPref, err := srv.GetAccessPoint().GetAuthPreference(ctx)
-	if err != nil {
-		childErr := child.Close()
-		return nil, nil, trace.NewAggregate(err, childErr)
-	}
-	disconnectExpiredCert := identityContext.RoleSet.AdjustDisconnectExpiredCert(authPref.GetDisconnectExpiredCert())
-	if !identityContext.CertValidBefore.IsZero() && disconnectExpiredCert {
-		child.disconnectExpiredCert = identityContext.CertValidBefore
-	}
-
-	fields := log.Fields{
-		"local":        child.ServerConn.LocalAddr(),
-		"remote":       child.ServerConn.RemoteAddr(),
-		"login":        child.Identity.Login,
-		"teleportUser": child.Identity.TeleportUser,
-		"id":           child.id,
-	}
-	if !child.disconnectExpiredCert.IsZero() {
-		fields["cert"] = child.disconnectExpiredCert
-	}
-	if child.clientIdleTimeout != 0 {
-		fields["idle"] = child.clientIdleTimeout
-	}
-	child.Entry = log.WithFields(log.Fields{
-		trace.Component:       srv.Component(),
-		trace.ComponentFields: fields,
-	})
 
 	monitorConfig := MonitorConfig{
 		LockWatcher:           child.srv.GetLockWatcher(),
@@ -357,7 +359,7 @@ func NewServerContext(ctx context.Context, parent *sshutils.ConnectionContext, s
 		TeleportUser:          child.Identity.TeleportUser,
 		Login:                 child.Identity.Login,
 		ServerID:              child.srv.ID(),
-		Entry:                 child.Entry,
+		Log:                   child.Log,
 		Emitter:               child.srv,
 	}
 	for _, opt := range monitorOpts {
@@ -611,7 +613,7 @@ func (c *ServerContext) reportStats(conn utils.Stater) {
 		sessionDataEvent.ConnectionMetadata.LocalAddr = c.ServerConn.LocalAddr().String()
 	}
 	if err := c.GetServer().EmitAuditEvent(c.GetServer().Context(), sessionDataEvent); err != nil {
-		c.WithError(err).Warn("Failed to emit session data event.")
+		c.Log.WithError(err).Warn("Failed to emit session data event.")
 	}
 
 	// Emit TX and RX bytes to their respective Prometheus counters.
@@ -657,7 +659,7 @@ func (c *ServerContext) SendExecResult(r ExecResult) {
 	select {
 	case c.ExecResultCh <- r:
 	default:
-		c.Infof("Blocked on sending exec result %v.", r)
+		c.Log.Infof("Blocked on sending exec result %v.", r)
 	}
 }
 
@@ -667,7 +669,7 @@ func (c *ServerContext) SendSubsystemResult(r SubsystemResult) {
 	select {
 	case c.SubsystemResultCh <- r:
 	default:
-		c.Info("Blocked on sending subsystem result.")
+		c.Log.Info("Blocked on sending subsystem result.")
 	}
 }
 
@@ -683,14 +685,14 @@ func (c *ServerContext) ProxyPublicAddress() string {
 
 	proxies, err := c.srv.GetAccessPoint().GetProxies()
 	if err != nil {
-		c.Errorf("Unable to retrieve proxy list: %v", err)
+		c.Log.Errorf("Unable to retrieve proxy list: %v", err)
 	}
 
 	if len(proxies) > 0 {
 		proxyHost = proxies[0].GetPublicAddr()
 		if proxyHost == "" {
 			proxyHost = fmt.Sprintf("%v:%v", proxies[0].GetHostname(), defaults.HTTPListenPort)
-			c.Debugf("public_address not set for proxy, returning proxyHost: %q", proxyHost)
+			c.Log.Debugf("public_address not set for proxy, returning proxyHost: %q", proxyHost)
 		}
 	}
 

@@ -886,10 +886,10 @@ func (s *Server) serveAgent(ctx *srv.ServerContext) error {
 	ctx.Parent().SetEnv(teleport.SSHAgentPID, fmt.Sprintf("%v", pid))
 	ctx.Parent().AddCloser(agentServer)
 	ctx.Parent().AddCloser(dirCloser)
-	ctx.Debugf("Starting agent server for Teleport user %v and socket %v.", ctx.Identity.TeleportUser, socketPath)
+	ctx.Log.Debugf("Starting agent server for Teleport user %v and socket %v.", ctx.Identity.TeleportUser, socketPath)
 	go func() {
 		if err := agentServer.Serve(); err != nil {
-			ctx.Errorf("agent server for user %q stopped: %v", ctx.Identity.TeleportUser, err)
+			ctx.Log.Errorf("agent server for user %q stopped: %v", ctx.Identity.TeleportUser, err)
 		}
 	}()
 
@@ -1195,8 +1195,8 @@ func (s *Server) handleDirectTCPIPRequest(ctx context.Context, ccx *sshutils.Con
 		return
 	}
 
-	scx.Debugf("Opening direct-tcpip channel from %v to %v.", scx.SrcAddr, scx.DstAddr)
-	defer scx.Debugf("Closing direct-tcpip channel from %v to %v.", scx.SrcAddr, scx.DstAddr)
+	scx.Log.Debugf("Opening direct-tcpip channel from %v to %v.", scx.SrcAddr, scx.DstAddr)
+	defer scx.Log.Debugf("Closing direct-tcpip channel from %v to %v.", scx.SrcAddr, scx.DstAddr)
 
 	// Create command to re-exec Teleport which will perform a net.Dial. The
 	// reason it's not done directly is because the PAM stack needs to be called
@@ -1347,13 +1347,13 @@ func (s *Server) handleSessionRequests(ctx context.Context, ccx *sshutils.Connec
 			err := scx.CreateOrJoinSession(s.reg)
 			if err != nil {
 				errorMessage := fmt.Sprintf("unable to update context: %v", err)
-				scx.Errorf("Unable to update context: %v.", errorMessage)
+				scx.Log.Errorf("Unable to update context: %v.", errorMessage)
 
 				// write the error to channel and close it
 				writeStderr(ch, errorMessage)
 				_, err := ch.SendRequest("exit-status", false, ssh.Marshal(struct{ C uint32 }{C: teleport.RemoteCommandFailure}))
 				if err != nil {
-					scx.Errorf("Failed to send exit status %v.", errorMessage)
+					scx.Log.Errorf("Failed to send exit status %v.", errorMessage)
 				}
 				return
 			}
@@ -1362,12 +1362,12 @@ func (s *Server) handleSessionRequests(ctx context.Context, ccx *sshutils.Connec
 		case creq := <-scx.SubsystemResultCh:
 			// this means that subsystem has finished executing and
 			// want us to close session and the channel
-			scx.Debugf("Close session request: %v.", creq.Err)
+			scx.Log.Debugf("Close session request: %v.", creq.Err)
 			return
 		case req := <-in:
 			if req == nil {
 				// this will happen when the client closes/drops the connection
-				scx.Debugf("Client %v disconnected.", scx.ServerConn.RemoteAddr())
+				scx.Log.Debugf("Client %v disconnected.", scx.ServerConn.RemoteAddr())
 				return
 			}
 			if err := s.dispatch(ch, req, scx); err != nil {
@@ -1380,13 +1380,13 @@ func (s *Server) handleSessionRequests(ctx context.Context, ccx *sshutils.Connec
 				}
 			}
 		case result := <-scx.ExecResultCh:
-			scx.Debugf("Exec request (%q) complete: %v", result.Command, result.Code)
+			scx.Log.Debugf("Exec request (%q) complete: %v", result.Command, result.Code)
 
 			// The exec process has finished and delivered the execution result, send
 			// the result back to the client, and close the session and channel.
 			_, err := ch.SendRequest("exit-status", false, ssh.Marshal(struct{ C uint32 }{C: uint32(result.Code)}))
 			if err != nil {
-				scx.Infof("Failed to send exit status for %v: %v", result.Command, err)
+				scx.Log.Infof("Failed to send exit status for %v: %v", result.Command, err)
 			}
 
 			return
@@ -1400,7 +1400,7 @@ func (s *Server) handleSessionRequests(ctx context.Context, ccx *sshutils.Connec
 // dispatch receives an SSH request for a subsystem and disptaches the request to the
 // appropriate subsystem implementation
 func (s *Server) dispatch(ch ssh.Channel, req *ssh.Request, ctx *srv.ServerContext) error {
-	ctx.Debugf("Handling request %v, want reply %v.", req.Type, req.WantReply)
+	ctx.Log.Debugf("Handling request %v, want reply %v.", req.Type, req.WantReply)
 
 	// If this SSH server is configured to only proxy, we do not support anything
 	// other than our own custom "subsystems" and environment manipulation.
@@ -1512,14 +1512,14 @@ func (s *Server) handleAgentForwardProxy(req *ssh.Request, ctx *srv.ServerContex
 func (s *Server) handleSubsystem(ch ssh.Channel, req *ssh.Request, ctx *srv.ServerContext) error {
 	sb, err := s.parseSubsystemRequest(req, ctx)
 	if err != nil {
-		ctx.Warnf("Failed to parse subsystem request: %v: %v.", req, err)
+		ctx.Log.Warnf("Failed to parse subsystem request: %v: %v.", req, err)
 		return trace.Wrap(err)
 	}
-	ctx.Debugf("Subsystem request: %v.", sb)
+	ctx.Log.Debugf("Subsystem request: %v.", sb)
 	// starting subsystem is blocking to the client,
 	// while collecting its result and waiting is not blocking
 	if err := sb.Start(ctx.ServerConn, ch, req, ctx); err != nil {
-		ctx.Warnf("Subsystem request %v failed: %v.", sb, err)
+		ctx.Log.Warnf("Subsystem request %v failed: %v.", sb, err)
 		ctx.SendSubsystemResult(srv.SubsystemResult{Err: trace.Wrap(err)})
 		return trace.Wrap(err)
 	}
@@ -1536,7 +1536,7 @@ func (s *Server) handleSubsystem(ch ssh.Channel, req *ssh.Request, ctx *srv.Serv
 func (s *Server) handleEnv(ch ssh.Channel, req *ssh.Request, ctx *srv.ServerContext) error {
 	var e sshutils.EnvReqParams
 	if err := ssh.Unmarshal(req.Payload, &e); err != nil {
-		ctx.Error(err)
+		ctx.Log.Error(err)
 		return trace.Wrap(err, "failed to parse env request")
 	}
 	ctx.SetEnv(e.Name, e.Value)

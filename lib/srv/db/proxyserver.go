@@ -438,7 +438,7 @@ func monitorConn(ctx context.Context, cfg monitorConnConfig) (net.Conn, error) {
 		ServerID:              cfg.serverID,
 		TeleportUser:          cfg.teleportUser,
 		Emitter:               cfg.emitter,
-		Entry:                 cfg.log,
+		Log:                   cfg.log,
 	})
 	if err != nil {
 		tc.Close()

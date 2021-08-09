@@ -161,7 +161,7 @@ func (e *localExec) Start(channel ssh.Channel) (*ExecResult, error) {
 	// Start the command.
 	err = e.Cmd.Start()
 	if err != nil {
-		e.Ctx.Warningf("Local command %v failed to start: %v", e.GetCommand(), err)
+		e.Ctx.Log.Warningf("Local command %v failed to start: %v", e.GetCommand(), err)
 
 		// Emit the result of execution to the audit log
 		emitExecAuditEvent(e.Ctx, e.GetCommand(), err)
@@ -174,12 +174,12 @@ func (e *localExec) Start(channel ssh.Channel) (*ExecResult, error) {
 
 	go func() {
 		if _, err := io.Copy(inputWriter, channel); err != nil {
-			e.Ctx.Warnf("Failed to forward data from SSH channel to local command %q stdin: %v", e.GetCommand(), err)
+			e.Ctx.Log.Warnf("Failed to forward data from SSH channel to local command %q stdin: %v", e.GetCommand(), err)
 		}
 		inputWriter.Close()
 	}()
 
-	e.Ctx.Infof("Started local command execution: %q", e.Command)
+	e.Ctx.Log.Infof("Started local command execution: %q", e.Command)
 
 	return nil, nil
 }
@@ -187,15 +187,15 @@ func (e *localExec) Start(channel ssh.Channel) (*ExecResult, error) {
 // Wait will block while the command executes.
 func (e *localExec) Wait() *ExecResult {
 	if e.Cmd.Process == nil {
-		e.Ctx.Error("No process.")
+		e.Ctx.Log.Error("No process.")
 	}
 
 	// Block until the command is finished executing.
 	err := e.Cmd.Wait()
 	if err != nil {
-		e.Ctx.Debugf("Local command failed: %v.", err)
+		e.Ctx.Log.Debugf("Local command failed: %v.", err)
 	} else {
-		e.Ctx.Debugf("Local command successfully executed.")
+		e.Ctx.Log.Debugf("Local command successfully executed.")
 	}
 
 	// Emit the result of execution to the Audit Log.
@@ -319,7 +319,7 @@ func (e *remoteExec) Start(ch ssh.Channel) (*ExecResult, error) {
 	go func() {
 		// copy from the channel (client) into stdin of the process
 		if _, err := io.Copy(inputWriter, ch); err != nil {
-			e.ctx.Warnf("Failed copying data from SSH channel to remote command stdin: %v", err)
+			e.ctx.Log.Warnf("Failed copying data from SSH channel to remote command stdin: %v", err)
 		}
 		inputWriter.Close()
 	}()
@@ -337,9 +337,9 @@ func (e *remoteExec) Wait() *ExecResult {
 	// Block until the command is finished executing.
 	err := e.session.Wait()
 	if err != nil {
-		e.ctx.Debugf("Remote command failed: %v.", err)
+		e.ctx.Log.Debugf("Remote command failed: %v.", err)
 	} else {
-		e.ctx.Debugf("Remote command successfully executed.")
+		e.ctx.Log.Debugf("Remote command successfully executed.")
 	}
 
 	// Emit the result of execution to the Audit Log.

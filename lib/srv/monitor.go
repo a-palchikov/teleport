@@ -83,8 +83,8 @@ type MonitorConfig struct {
 	ServerID string
 	// Emitter is events emitter
 	Emitter apievents.Emitter
-	// Entry is a logging entry
-	Entry log.FieldLogger
+	// Log is a logging entry
+	Log log.FieldLogger
 	// IdleTimeoutMessage is sent to the client when the idle timeout expires.
 	IdleTimeoutMessage string
 	// MessageWriter wraps a channel to send text messages to the client. Use
@@ -106,7 +106,7 @@ func (m *MonitorConfig) CheckAndSetDefaults() error {
 	if m.Conn == nil {
 		return trace.BadParameter("missing parameter Conn")
 	}
-	if m.Entry == nil {
+	if m.Log == nil {
 		return trace.BadParameter("missing parameter Entry")
 	}
 	if m.Tracker == nil {
@@ -150,7 +150,7 @@ func (w *Monitor) start(lockWatch types.Watcher) {
 	lockWatchDone := lockWatch.Done()
 	defer func() {
 		if err := lockWatch.Close(); err != nil {
-			w.Entry.WithError(err).Warn("Failed to close lock watcher subscription.")
+			w.Log.WithError(err).Warn("Failed to close lock watcher subscription.")
 		}
 	}()
 	// If an applicable lock is already in force, close the connection immediately.
@@ -177,11 +177,11 @@ func (w *Monitor) start(lockWatch types.Watcher) {
 		case <-certTime:
 			reason := fmt.Sprintf("client certificate expired at %v", w.Clock.Now().UTC())
 			if err := w.emitDisconnectEvent(reason); err != nil {
-				w.Entry.WithError(err).Warn("Failed to emit audit event.")
+				w.Log.WithError(err).Warn("Failed to emit audit event.")
 			}
-			w.Entry.Debugf("Disconnecting client: %v", reason)
+			w.Log.Debugf("Disconnecting client: %v", reason)
 			if err := w.Conn.Close(); err != nil {
-				w.Entry.WithError(err).Error("Failed to close connection.")
+				w.Log.WithError(err).Error("Failed to close connection.")
 			}
 			return
 
@@ -196,27 +196,27 @@ func (w *Monitor) start(lockWatch types.Watcher) {
 						now.Sub(clientLastActive), w.ClientIdleTimeout)
 				}
 				if err := w.emitDisconnectEvent(reason); err != nil {
-					w.Entry.WithError(err).Warn("Failed to emit audit event.")
+					w.Log.WithError(err).Warn("Failed to emit audit event.")
 				}
 				if w.MessageWriter != nil && w.IdleTimeoutMessage != "" {
 					if _, err := w.MessageWriter.WriteString(w.IdleTimeoutMessage); err != nil {
-						w.Entry.WithError(err).Warn("Failed to send idle timeout message.")
+						w.Log.WithError(err).Warn("Failed to send idle timeout message.")
 					}
 				}
-				w.Entry.Debugf("Disconnecting client: %v", reason)
+				w.Log.Debugf("Disconnecting client: %v", reason)
 				if err := w.Conn.Close(); err != nil {
-					w.Entry.WithError(err).Error("Failed to close connection.")
+					w.Log.WithError(err).Error("Failed to close connection.")
 				}
 				return
 			}
-			w.Entry.Debugf("Next check in %v", w.ClientIdleTimeout-now.Sub(clientLastActive))
+			w.Log.Debugf("Next check in %v", w.ClientIdleTimeout-now.Sub(clientLastActive))
 			idleTime = w.Clock.After(w.ClientIdleTimeout - now.Sub(clientLastActive))
 
 		// Lock in force.
 		case lockEvent := <-lockWatch.Events():
 			lock, err := getLock(lockEvent)
 			if err != nil {
-				w.Entry.WithError(err).Warnf("Failed to extract lock from event %v.", lockEvent)
+				w.Log.WithError(err).Warnf("Failed to extract lock from event %v.", lockEvent)
 				continue
 			}
 			if lock != nil {
@@ -225,7 +225,7 @@ func (w *Monitor) start(lockWatch types.Watcher) {
 			}
 
 		case <-lockWatchDone:
-			w.Entry.WithError(lockWatch.Error()).Warn("Lock watcher subscription was closed.")
+			w.Log.WithError(lockWatch.Error()).Warn("Lock watcher subscription was closed.")
 			if w.DisconnectExpiredCert.IsZero() && w.ClientIdleTimeout == 0 {
 				return
 			}
@@ -233,7 +233,7 @@ func (w *Monitor) start(lockWatch types.Watcher) {
 			lockWatchDone = nil
 
 		case <-w.Context.Done():
-			w.Entry.Debugf("Releasing associated resources - context has been closed.")
+			w.Log.Debugf("Releasing associated resources - context has been closed.")
 			return
 		}
 	}
@@ -265,16 +265,16 @@ func (w *Monitor) handleLockInForce(lock types.Lock) {
 	// TODO(andrej): Handle stale lock views.
 	reason := services.LockInForceMessage(lock)
 	if err := w.emitDisconnectEvent(reason); err != nil {
-		w.Entry.WithError(err).Warn("Failed to emit audit event.")
+		w.Log.WithError(err).Warn("Failed to emit audit event.")
 	}
 	if w.MessageWriter != nil {
 		if _, err := w.MessageWriter.WriteString(reason); err != nil {
-			w.Entry.WithError(err).Warn("Failed to send lock-in-force message.")
+			w.Log.WithError(err).Warn("Failed to send lock-in-force message.")
 		}
 	}
-	w.Entry.Debugf("Disconnecting client: %v.", reason)
+	w.Log.Debugf("Disconnecting client: %v.", reason)
 	if err := w.Conn.Close(); err != nil {
-		w.Entry.WithError(err).Error("Failed to close connection.")
+		w.Log.WithError(err).Error("Failed to close connection.")
 	}
 }
 

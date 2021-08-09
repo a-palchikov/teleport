@@ -1340,7 +1340,7 @@ func (s *clusterSession) monitorConn(conn net.Conn, err error) (net.Conn, error)
 		Context:               ctx,
 		TeleportUser:          s.User.GetName(),
 		ServerID:              s.parent.cfg.ServerID,
-		Entry:                 s.parent.log,
+		Log:                   s.parent.log,
 		Emitter:               s.parent.cfg.AuthClient,
 	})
 	if err != nil {
