@@ -230,6 +230,7 @@ func etcdTestEnabled() bool {
 }
 
 func (r fakeClock) Advance(d time.Duration) {
+	r.FakeClock.Advance(d)
 	// We cannot rewind time for etcd since it will not have any effect on the server
 	// so we actually sleep in this case
 	time.Sleep(d)
