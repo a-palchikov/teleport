@@ -117,6 +117,7 @@ func TestDatabaseServersCRUD(t *testing.T) {
 		Clock: clock,
 	})
 	require.NoError(t, err)
+	t.Cleanup(func() { backend.Close() })
 
 	presence := NewPresenceService(backend)
 
@@ -199,6 +200,7 @@ func TestNodeCRUD(t *testing.T) {
 	ctx := context.Background()
 	lite, err := lite.NewWithConfig(ctx, lite.Config{Path: t.TempDir()})
 	require.NoError(t, err)
+	t.Cleanup(func() { lite.Close() })
 
 	presence := NewPresenceService(lite)
 

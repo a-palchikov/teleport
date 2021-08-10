@@ -109,6 +109,7 @@ func (s *LiteMemSuite) TestMirror(c *check.C) {
 		Mirror:           true,
 		PollStreamPeriod: 300 * time.Millisecond,
 	})
+	defer mem.Close()
 	c.Assert(err, check.IsNil)
 	s.suite.Mirror(c, mem)
 }

@@ -86,6 +86,7 @@ func (s *PasswordSuite) SetUpTest(c *C) {
 }
 
 func (s *PasswordSuite) TearDownTest(c *C) {
+	s.bk.Close()
 }
 
 func (s *PasswordSuite) TestTiming(c *C) {

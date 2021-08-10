@@ -45,6 +45,7 @@ func TestProxyWatcher(t *testing.T) {
 		PollStreamPeriod: 200 * time.Millisecond,
 	})
 	require.NoError(t, err)
+	t.Cleanup(func() { bk.Close() })
 
 	type client struct {
 		services.Presence
@@ -138,6 +139,7 @@ func TestLockWatcher(t *testing.T) {
 		Clock:            clock,
 	})
 	require.NoError(t, err)
+	t.Cleanup(func() { bk.Close() })
 
 	type client struct {
 		services.Access

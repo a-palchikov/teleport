@@ -40,6 +40,7 @@ func TestCreateSAMLUser(t *testing.T) {
 		Clock:            c,
 	})
 	require.NoError(t, err)
+	t.Cleanup(func() { b.Close() })
 
 	clusterName, err := services.NewClusterNameWithRandomID(types.ClusterNameSpecV2{
 		ClusterName: "me.localhost",
@@ -145,6 +146,7 @@ func TestPingSAMLWorkaround(t *testing.T) {
 		Clock:            c,
 	})
 	require.NoError(t, err)
+	t.Cleanup(func() { b.Close() })
 
 	clusterName, err := services.NewClusterNameWithRandomID(types.ClusterNameSpecV2{
 		ClusterName: "me.localhost",

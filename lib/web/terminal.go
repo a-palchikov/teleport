@@ -698,6 +698,8 @@ func (t *TerminalHandler) read(out []byte, ws *websocket.Conn) (n int, err error
 		go t.windowChange(params)
 
 		return 0, nil
+	case defaults.WebsocketClose:
+		return 0, io.EOF
 	default:
 		return 0, trace.BadParameter("unknown prefix type: %v", envelope.GetType())
 	}

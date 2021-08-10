@@ -477,6 +477,7 @@ func TestCASigningAlg(t *testing.T) {
 	// Reset the auth server state.
 	conf.Backend, err = lite.New(context.TODO(), backend.Params{"path": t.TempDir()})
 	require.NoError(t, err)
+	t.Cleanup(func() { conf.Backend.Close() })
 	conf.DataDir = t.TempDir()
 
 	// Start a new server with non-default signing alg.
@@ -866,6 +867,7 @@ func setupConfig(t *testing.T) InitConfig {
 
 	bk, err := lite.New(context.TODO(), backend.Params{"path": tempDir})
 	require.NoError(t, err)
+	t.Cleanup(func() { bk.Close() })
 
 	clusterName, err := services.NewClusterNameWithRandomID(types.ClusterNameSpecV2{
 		ClusterName: "me.localhost",

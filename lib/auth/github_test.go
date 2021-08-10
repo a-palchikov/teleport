@@ -71,6 +71,10 @@ func (s *GithubSuite) SetUpSuite(c *check.C) {
 	s.a.emitter = s.mockEmitter
 }
 
+func (s *GithubSuite) TearDownSuite(c *check.C) {
+	s.b.Close()
+}
+
 func (s *GithubSuite) TestPopulateClaims(c *check.C) {
 	claims, err := populateGithubClaims(&testGithubAPIClient{})
 	c.Assert(err, check.IsNil)

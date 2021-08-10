@@ -1199,11 +1199,17 @@ func (s *WebSuite) TestCloseConnectionsOnLogout(c *C) {
 	// wait until we timeout or detect that connection has been closed
 	after := time.After(5 * time.Second)
 	errC := make(chan error)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	go func() {
 		for {
 			_, err := stream.Read(out)
 			if err != nil {
-				errC <- err
+				select {
+				case errC <- err:
+				case <-ctx.Done():
+					return
+				}
 			}
 		}
 	}()

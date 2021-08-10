@@ -40,6 +40,7 @@ func TestDatabasesCRUD(t *testing.T) {
 		Clock: clockwork.NewFakeClock(),
 	})
 	require.NoError(t, err)
+	t.Cleanup(func() { backend.Close() })
 
 	service := NewDatabasesService(backend)
 

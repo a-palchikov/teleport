@@ -34,6 +34,7 @@ func TestLockCRUD(t *testing.T) {
 	ctx := context.Background()
 	lite, err := lite.NewWithConfig(ctx, lite.Config{Path: t.TempDir()})
 	require.NoError(t, err)
+	t.Cleanup(func() { lite.Close() })
 
 	access := NewAccessService(lite)
 

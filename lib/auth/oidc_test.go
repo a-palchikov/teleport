@@ -68,6 +68,10 @@ func (s *OIDCSuite) SetUpSuite(c *check.C) {
 	c.Assert(err, check.IsNil)
 }
 
+func (s *OIDCSuite) TearDownSuite(c *check.C) {
+	s.b.Close()
+}
+
 func (s *OIDCSuite) TestCreateOIDCUser(c *check.C) {
 	// Create OIDC user with 1 minute expiry.
 	_, err := s.a.createOIDCUser(&createUserParams{

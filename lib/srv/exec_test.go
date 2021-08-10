@@ -154,6 +154,7 @@ func (s *ExecSuite) SetUpSuite(c *check.C) {
 
 func (s *ExecSuite) TearDownSuite(c *check.C) {
 	s.ctx.session.term.Close()
+	s.a.Close()
 }
 
 func (s *ExecSuite) TestOSCommandPrep(c *check.C) {
