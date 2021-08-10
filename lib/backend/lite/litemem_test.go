@@ -20,7 +20,6 @@ import (
 	"context"
 	"time"
 
-	"github.com/gravitational/teleport/lib/backend"
 	"github.com/gravitational/teleport/lib/backend/test"
 
 	"github.com/jonboulle/clockwork"
@@ -29,29 +28,27 @@ import (
 
 type LiteMemSuite struct {
 	bk    *Backend
+	clock clockwork.FakeClock
 	suite test.BackendSuite
 }
 
 var _ = check.Suite(&LiteMemSuite{})
 
-func (s *LiteMemSuite) SetUpSuite(c *check.C) {
-	clock := clockwork.NewFakeClock()
-	newBackend := func() (backend.Backend, error) {
-		return NewWithConfig(context.Background(), Config{
-			Memory:           true,
-			PollStreamPeriod: 300 * time.Millisecond,
-			Clock:            clock,
-		})
-	}
-	s.suite.NewBackend = newBackend
-	s.suite.Clock = clock
+func (s *LiteMemSuite) SetUpTest(c *check.C) {
+	s.clock = clockwork.NewFakeClock()
+	s.bk = s.newBackend(c)
+	s.suite.B = s.bk
+	s.suite.Clock = s.clock
 }
 
-func (s *LiteMemSuite) SetUpTest(c *check.C) {
-	bk, err := s.suite.NewBackend()
+func (s *LiteMemSuite) newBackend(c *check.C) *Backend {
+	m, err := NewWithConfig(context.Background(), Config{
+		Memory:           true,
+		PollStreamPeriod: 300 * time.Millisecond,
+		Clock:            s.clock,
+	})
 	c.Assert(err, check.IsNil)
-	s.bk = bk.(*Backend)
-	s.suite.B = s.bk
+	return m
 }
 
 func (s *LiteMemSuite) TearDownTest(c *check.C) {
@@ -101,11 +98,9 @@ func (s *LiteMemSuite) TestLocking(c *check.C) {
 }
 
 func (s *LiteMemSuite) TestConcurrentOperations(c *check.C) {
-	bk, err := s.suite.NewBackend()
-	c.Assert(err, check.IsNil)
+	bk := s.newBackend(c)
 	defer bk.Close()
-	s.suite.B2 = bk
-	s.suite.ConcurrentOperations(c)
+	s.suite.ConcurrentOperations(c, bk)
 }
 
 func (s *LiteMemSuite) TestMirror(c *check.C) {

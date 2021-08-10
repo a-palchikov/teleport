@@ -20,14 +20,11 @@ import (
 	"os"
 	"testing"
 
-	"github.com/gravitational/teleport/lib/backend"
 	"github.com/gravitational/teleport/lib/backend/test"
 	"github.com/gravitational/teleport/lib/utils"
 
 	"github.com/jonboulle/clockwork"
 	"gopkg.in/check.v1"
-
-	"github.com/gravitational/trace"
 )
 
 func TestMain(m *testing.M) {
@@ -39,29 +36,26 @@ func TestMemory(t *testing.T) { check.TestingT(t) }
 
 type MemorySuite struct {
 	bk    *Memory
+	clock clockwork.FakeClock
 	suite test.BackendSuite
 }
 
 var _ = check.Suite(&MemorySuite{})
 
 func (s *MemorySuite) SetUpSuite(c *check.C) {
-	clock := clockwork.NewFakeClock()
-	newBackend := func() (backend.Backend, error) {
-		mem, err := New(Config{Clock: clock})
-		if err != nil {
-			return nil, trace.Wrap(err)
-		}
-		return mem, nil
-	}
-	s.suite.NewBackend = newBackend
-	s.suite.Clock = clock
 }
 
 func (s *MemorySuite) SetUpTest(c *check.C) {
-	bk, err := s.suite.NewBackend()
-	c.Assert(err, check.IsNil)
-	s.bk = bk.(*Memory)
+	s.clock = clockwork.NewFakeClock()
+	s.bk = s.newBackend(c)
 	s.suite.B = s.bk
+	s.suite.Clock = s.clock
+}
+
+func (s *MemorySuite) newBackend(c *check.C) *Memory {
+	m, err := New(Config{Clock: s.clock})
+	c.Assert(err, check.IsNil)
+	return m
 }
 
 func (s *MemorySuite) TearDownTest(c *check.C) {
@@ -111,11 +105,9 @@ func (s *MemorySuite) TestLocking(c *check.C) {
 }
 
 func (s *MemorySuite) TestConcurrentOperations(c *check.C) {
-	bk, err := s.suite.NewBackend()
-	c.Assert(err, check.IsNil)
+	bk := s.newBackend(c)
 	defer bk.Close()
-	s.suite.B2 = bk
-	s.suite.ConcurrentOperations(c)
+	s.suite.ConcurrentOperations(c, bk)
 }
 
 func (s *MemorySuite) TestMirror(c *check.C) {

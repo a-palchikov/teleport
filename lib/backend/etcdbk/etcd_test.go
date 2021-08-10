@@ -19,6 +19,7 @@ package etcdbk
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"os"
 	"strings"
 	"testing"
@@ -49,49 +50,30 @@ func TestMain(m *testing.M) {
 func TestEtcd(t *testing.T) { check.TestingT(t) }
 
 type EtcdSuite struct {
-	bk     *EtcdBackend
-	suite  test.BackendSuite
-	config backend.Params
+	bk    *EtcdBackend
+	clock clockwork.FakeClock
+	suite test.BackendSuite
 }
 
 var _ = check.Suite(&EtcdSuite{})
 
 func (s *EtcdSuite) SetUpSuite(c *check.C) {
-	// This config must match examples/etcd/teleport.yaml
-	s.config = backend.Params{
-		"peers":         []string{"https://127.0.0.1:2379"},
-		"prefix":        examplePrefix,
-		"tls_key_file":  "../../../examples/etcd/certs/client-key.pem",
-		"tls_cert_file": "../../../examples/etcd/certs/client-cert.pem",
-		"tls_ca_file":   "../../../examples/etcd/certs/ca-cert.pem",
-	}
-
-	clock := clockwork.NewFakeClock()
-	newBackend := func() (backend.Backend, error) {
-		bk, err := New(context.Background(), s.config)
-		if err != nil {
-			return nil, trace.Wrap(err)
-		}
-		bk.clock = clock
-		return bk, nil
-	}
-	s.suite.NewBackend = newBackend
-	s.suite.Clock = fakeClock{FakeClock: clock}
-}
-
-func (s *EtcdSuite) SetUpTest(c *check.C) {
 	if !etcdTestEnabled() {
 		c.Skip("This test requires etcd, start it with examples/etcd/start-etcd.sh and set TELEPORT_ETCD_TEST=yes")
 	}
+}
+
+func (s *EtcdSuite) SetUpTest(c *check.C) {
+	s.clock = clockwork.NewFakeClock()
+	s.suite.Clock = fakeClock{FakeClock: s.clock}
+
 	// Initiate a backend with a registry
-	b, err := s.suite.NewBackend()
-	c.Assert(err, check.IsNil)
-	s.bk = b.(*EtcdBackend)
+	s.bk = newBackend(c, WithClock(s.clock))
 	s.suite.B = s.bk
 
 	// Clean up any pre-stored records for all used prefixes
 	ctx := context.Background()
-	_, err = s.bk.client.Delete(ctx, strings.TrimSuffix(examplePrefix, "/"), clientv3.WithPrefix())
+	_, err := s.bk.client.Delete(ctx, strings.TrimSuffix(examplePrefix, "/"), clientv3.WithPrefix())
 	c.Assert(err, check.IsNil)
 	_, err = s.bk.client.Delete(ctx, strings.TrimSuffix(customPrefix, "/"), clientv3.WithPrefix())
 	c.Assert(err, check.IsNil)
@@ -102,7 +84,9 @@ func (s *EtcdSuite) TearDownTest(c *check.C) {
 		return
 	}
 	err := s.bk.Close()
-	c.Assert(err, check.IsNil)
+	if err != nil && !errors.Is(err, context.Canceled) {
+		c.Error("Did not expect an error from Close: ", err)
+	}
 }
 
 func (s *EtcdSuite) TestCRUD(c *check.C) {
@@ -142,8 +126,8 @@ func (s *EtcdSuite) TestLocking(c *check.C) {
 }
 
 func (s *EtcdSuite) TestPrefix(c *check.C) {
-	s.bk.cfg.Key = customPrefix
-	c.Assert(s.bk.cfg.Validate(), check.IsNil)
+	bk := newBackend(c, WithClock(s.clock), WithPrefix(customPrefix))
+	defer bk.Close()
 
 	var (
 		ctx  = context.Background()
@@ -154,12 +138,12 @@ func (s *EtcdSuite) TestPrefix(c *check.C) {
 	)
 
 	// Item key starts with '/'.
-	_, err := s.bk.Put(ctx, item)
+	_, err := bk.Put(ctx, item)
 	c.Assert(err, check.IsNil)
 
-	wantKey := s.bk.cfg.Key + string(item.Key)
+	wantKey := bk.cfg.Key + string(item.Key)
 	s.assertKV(ctx, c, wantKey, string(item.Value))
-	got, err := s.bk.Get(ctx, item.Key)
+	got, err := bk.Get(ctx, item.Key)
 	c.Assert(err, check.IsNil)
 	item.ID = got.ID
 	c.Assert(*got, check.DeepEquals, item)
@@ -169,12 +153,12 @@ func (s *EtcdSuite) TestPrefix(c *check.C) {
 		Key:   []byte("foo"),
 		Value: []byte("bar"),
 	}
-	_, err = s.bk.Put(ctx, item)
+	_, err = bk.Put(ctx, item)
 	c.Assert(err, check.IsNil)
 
-	wantKey = s.bk.cfg.Key + string(item.Key)
+	wantKey = bk.cfg.Key + string(item.Key)
 	s.assertKV(ctx, c, wantKey, string(item.Value))
-	got, err = s.bk.Get(ctx, item.Key)
+	got, err = bk.Get(ctx, item.Key)
 	c.Assert(err, check.IsNil)
 	item.ID = got.ID
 	c.Assert(*got, check.DeepEquals, item)
@@ -229,7 +213,22 @@ func etcdTestEnabled() bool {
 	return os.Getenv("TELEPORT_ETCD_TEST") != ""
 }
 
+func newBackend(c *check.C, opts ...Option) *EtcdBackend {
+	// This config must match examples/etcd/teleport.yaml
+	config := backend.Params{
+		"peers":         []string{"https://127.0.0.1:2379"},
+		"prefix":        examplePrefix,
+		"tls_key_file":  "../../../examples/etcd/certs/client-key.pem",
+		"tls_cert_file": "../../../examples/etcd/certs/client-cert.pem",
+		"tls_ca_file":   "../../../examples/etcd/certs/ca-cert.pem",
+	}
+	bk, err := New(context.Background(), config, opts...)
+	c.Assert(err, check.IsNil)
+	return bk
+}
+
 func (r fakeClock) Advance(d time.Duration) {
+	r.FakeClock.Advance(d)
 	// We cannot rewind time for etcd since it will not have any effect on the server
 	// so we actually sleep in this case
 	time.Sleep(d)
