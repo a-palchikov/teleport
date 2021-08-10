@@ -106,3 +106,7 @@ func (c *rawKeyStore) GetJWTSigner(ca types.CertAuthority) (crypto.Signer, error
 func (c *rawKeyStore) DeleteKey(rawKey []byte) error {
 	return nil
 }
+
+func (*rawKeyStore) Close() error {
+	return nil
+}

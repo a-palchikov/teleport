@@ -19,6 +19,7 @@ package keystore
 import (
 	"bytes"
 	"crypto"
+	"io"
 
 	"golang.org/x/crypto/ssh"
 
@@ -29,6 +30,8 @@ var pkcs11Prefix = []byte("pkcs11:")
 
 // KeyStore is an interface for creating and using cryptographic keys.
 type KeyStore interface {
+	io.Closer
+
 	// GenerateRSA creates a new RSA private key and returns its identifier and
 	// a crypto.Signer. The returned identifier can be passed to GetSigner
 	// later to get the same crypto.Signer.

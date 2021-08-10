@@ -176,6 +176,8 @@ func TestKeyStore(t *testing.T) {
 
 				// create test token
 				cmd := exec.Command("softhsm2-util", "--init-token", "--slot", "0", "--label", "test", "--so-pin", "password", "--pin", "password")
+				cmd.Stdout = os.Stdout
+				cmd.Stderr = os.Stderr
 				require.NoError(t, cmd.Run())
 
 				t.Cleanup(func() {
@@ -248,7 +250,10 @@ func TestKeyStore(t *testing.T) {
 			require.NotNil(t, signer)
 
 			// delete the key when we're done with it
-			t.Cleanup(func() { require.NoError(t, keyStore.DeleteKey(key)) })
+			t.Cleanup(func() {
+				require.NoError(t, keyStore.DeleteKey(key))
+				require.NoError(t, keyStore.Close())
+			})
 
 			// get a signer from the key
 			signer, err = keyStore.GetSigner(key)
@@ -287,7 +292,7 @@ func TestKeyStore(t *testing.T) {
 				ActiveKeys: types.CAKeySet{
 					SSH: []*types.SSHKeyPair{
 						testPKCS11SSHKeyPair,
-						&types.SSHKeyPair{
+						{
 							PrivateKey:     key,
 							PrivateKeyType: keystore.KeyType(key),
 							PublicKey:      sshPublicKey,
@@ -295,7 +300,7 @@ func TestKeyStore(t *testing.T) {
 					},
 					TLS: []*types.TLSKeyPair{
 						testPKCS11TLSKeyPair,
-						&types.TLSKeyPair{
+						{
 							Key:     key,
 							KeyType: keystore.KeyType(key),
 							Cert:    tlsCert,
@@ -303,7 +308,7 @@ func TestKeyStore(t *testing.T) {
 					},
 					JWT: []*types.JWTKeyPair{
 						testPKCS11JWTKeyPair,
-						&types.JWTKeyPair{
+						{
 							PrivateKey:     key,
 							PrivateKeyType: keystore.KeyType(key),
 							PublicKey:      sshPublicKey,

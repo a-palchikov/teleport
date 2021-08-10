@@ -282,6 +282,10 @@ func (c *hsmKeyStore) DeleteKey(rawKey []byte) error {
 	return trace.Wrap(signer.Delete())
 }
 
+func (c *hsmKeyStore) Close() error {
+	return trace.Wrap(c.ctx.Close())
+}
+
 type keyID struct {
 	HostID string `json:"host_id"`
 	KeyID  string `json:"key_id"`
