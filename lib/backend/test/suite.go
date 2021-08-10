@@ -22,6 +22,7 @@ import (
 	"context"
 	"encoding/hex"
 	"math/rand"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -527,38 +528,26 @@ func (s *BackendSuite) Locking(c *check.C, bk backend.Backend) {
 	tok2 := "token2"
 	ttl := 5 * time.Second
 
-	// If all this takes more than a minute then something external to the test
-	// has probably gone bad (e.g. db server has ceased to exist), so it's
-	// probably best to bail out with a sensible error (& call stack) rather
-	// than wait for the test to time out
-	ctx, cancel := context.WithTimeout(context.TODO(), 1*time.Minute)
-	defer cancel()
-
-	// Manually drive the clock at ~10x speed to make sure anyone waiting on it
-	// will eventually be woken. This will automatically be stopped when the
-	// test exits thanks to the deferred cancel above.
-	go func() {
-		t := time.NewTicker(100 * time.Millisecond)
-		defer t.Stop()
-
-		for {
-			select {
-			case <-ctx.Done():
-				return
-
-			case <-t.C:
-				s.Clock.Advance(1 * time.Second)
-			}
-		}
-	}()
+	ctx := context.TODO()
 
 	lock, err := backend.AcquireLock(ctx, bk, tok1, ttl)
 	c.Assert(err, check.IsNil)
 	x := int32(7)
 
+	// Defines the step a release process advances as the lock is released.
+	// Should be greater than the Sleep duration used in backend.AcquireLock
+	tstep := 1 * time.Second
+	// Watch over all goroutines to ensure the test exits only after they're all complete
+	var wg sync.WaitGroup
+	wg.Add(3)
 	go func() {
 		atomic.StoreInt32(&x, 9)
+		// Wait until AcquireLock blocks on the lock
+		s.Clock.BlockUntil(1)
 		c.Assert(lock.Release(ctx, bk), check.IsNil)
+		// Force the clock to periodically move after release so waiters can be awoken
+		s.Clock.Advance(tstep)
+		wg.Done()
 	}()
 	lock, err = backend.AcquireLock(ctx, bk, tok1, ttl)
 	c.Assert(err, check.IsNil)
@@ -572,7 +561,12 @@ func (s *BackendSuite) Locking(c *check.C, bk backend.Backend) {
 	atomic.StoreInt32(&x, 7)
 	go func() {
 		atomic.StoreInt32(&x, 9)
+		// Wait until AcquireLock blocks on the lock
+		s.Clock.BlockUntil(1)
 		c.Assert(lock.Release(ctx, bk), check.IsNil)
+		// Force the clock to periodically move after release so waiters can be awoken
+		s.Clock.Advance(tstep)
+		wg.Done()
 	}()
 	lock, err = backend.AcquireLock(ctx, bk, tok1, ttl)
 	c.Assert(err, check.IsNil)
@@ -587,8 +581,13 @@ func (s *BackendSuite) Locking(c *check.C, bk backend.Backend) {
 	c.Assert(err, check.IsNil)
 	go func() {
 		atomic.StoreInt32(&y, 15)
+		// Wait until AcquireLock blocks on the lock1
+		s.Clock.BlockUntil(1)
 		c.Assert(lock1.Release(ctx, bk), check.IsNil)
 		c.Assert(lock2.Release(ctx, bk), check.IsNil)
+		// Force the clock to periodically move after release so waiters can be awoken
+		s.Clock.Advance(tstep)
+		wg.Done()
 	}()
 
 	lock, err = backend.AcquireLock(ctx, bk, tok1, ttl)
@@ -596,6 +595,7 @@ func (s *BackendSuite) Locking(c *check.C, bk backend.Backend) {
 	c.Assert(atomic.LoadInt32(&y), check.Equals, int32(15))
 
 	c.Assert(lock.Release(ctx, bk), check.IsNil)
+	wg.Wait()
 }
 
 // ConcurrentOperations tests concurrent operations on the same
