@@ -40,11 +40,8 @@ import (
 
 type BackendSuite struct {
 	B backend.Backend
-	// B2 is a backend opened to the same database,
-	// used for concurrent operations tests
-	B2         backend.Backend
-	NewBackend func() (backend.Backend, error)
-	Clock      clockwork.FakeClock
+	// Clock specifies the clock implementation for the tests
+	Clock clockwork.FakeClock
 }
 
 // CRUD tests create read update scenarios
@@ -488,16 +485,13 @@ func (s *BackendSuite) Events(c *check.C) {
 	}
 }
 
-// WatchersClose tests scenarios with watches close
+// WatchersClose tests closing event watchers scenarios
 func (s *BackendSuite) WatchersClose(c *check.C) {
 	prefix := MakePrefix()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	b, err := s.NewBackend()
-	c.Assert(err, check.IsNil)
-
-	watcher, err := b.NewWatcher(ctx, backend.Watch{Prefixes: [][]byte{prefix("")}})
+	watcher, err := s.B.NewWatcher(ctx, backend.Watch{Prefixes: [][]byte{prefix("")}})
 	c.Assert(err, check.IsNil)
 
 	// cancel context -> get watcher to close
@@ -510,10 +504,10 @@ func (s *BackendSuite) WatchersClose(c *check.C) {
 	}
 
 	// closing backend should close associated watcher too
-	watcher, err = b.NewWatcher(context.Background(), backend.Watch{Prefixes: [][]byte{prefix("")}})
+	watcher, err = s.B.NewWatcher(context.Background(), backend.Watch{Prefixes: [][]byte{prefix("")}})
 	c.Assert(err, check.IsNil)
 
-	b.Close()
+	c.Assert(s.B.Close(), check.IsNil)
 
 	select {
 	case <-watcher.Done():
@@ -600,10 +594,10 @@ func (s *BackendSuite) Locking(c *check.C, bk backend.Backend) {
 
 // ConcurrentOperations tests concurrent operations on the same
 // shared backend
-func (s *BackendSuite) ConcurrentOperations(c *check.C) {
+func (s *BackendSuite) ConcurrentOperations(c *check.C, bk backend.Backend) {
 	l := s.B
 	c.Assert(l, check.NotNil)
-	l2 := s.B2
+	l2 := bk
 	c.Assert(l2, check.NotNil)
 
 	prefix := MakePrefix()

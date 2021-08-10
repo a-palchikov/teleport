@@ -45,24 +45,17 @@ type LiteSuite struct {
 
 var _ = check.Suite(&LiteSuite{})
 
-func (s *LiteSuite) SetUpSuite(c *check.C) {
-	clock := clockwork.NewFakeClock()
-	newBackend := func() (backend.Backend, error) {
-		return NewWithConfig(context.Background(), Config{
-			Path:             c.MkDir(),
-			PollStreamPeriod: 300 * time.Millisecond,
-			Clock:            clock,
-		})
-	}
-	s.suite.NewBackend = newBackend
-	s.suite.Clock = clock
-}
-
 func (s *LiteSuite) SetUpTest(c *check.C) {
-	bk, err := s.suite.NewBackend()
+	var err error
+	clock := clockwork.NewFakeClock()
+	s.bk, err = NewWithConfig(context.Background(), Config{
+		Path:             c.MkDir(),
+		PollStreamPeriod: 300 * time.Millisecond,
+		Clock:            clock,
+	})
 	c.Assert(err, check.IsNil)
-	s.bk = bk.(*Backend)
 	s.suite.B = s.bk
+	s.suite.Clock = clock
 }
 
 func (s *LiteSuite) TearDownTest(c *check.C) {
@@ -116,13 +109,7 @@ func (s *LiteSuite) TestImport(c *check.C) {
 	ctx := context.Background()
 	prefix := test.MakePrefix()
 
-	backendI, err := s.suite.NewBackend()
-	c.Assert(err, check.IsNil)
-	defer backendI.Close()
-
-	b := backendI.(*Backend)
-
-	imported, err := b.Imported(ctx)
+	imported, err := s.bk.Imported(ctx)
 	c.Assert(err, check.IsNil)
 	c.Assert(imported, check.Equals, false)
 
@@ -132,11 +119,11 @@ func (s *LiteSuite) TestImport(c *check.C) {
 		{Key: prefix("/prefix/b"), Value: []byte("val b")},
 		{Key: prefix("/prefix/a"), Value: []byte("val a")},
 	}
-	err = b.Import(ctx, items)
+	err = s.bk.Import(ctx, items)
 	c.Assert(err, check.IsNil)
 
 	// prefix range fetch
-	result, err := b.GetRange(ctx, prefix("/prefix"), backend.RangeEnd(prefix("/prefix")), backend.NoLimit)
+	result, err := s.bk.GetRange(ctx, prefix("/prefix"), backend.RangeEnd(prefix("/prefix")), backend.NoLimit)
 	c.Assert(err, check.IsNil)
 	expected := []backend.Item{
 		{Key: prefix("/prefix/a"), Value: []byte("val a")},
@@ -144,14 +131,14 @@ func (s *LiteSuite) TestImport(c *check.C) {
 	}
 	test.ExpectItems(c, result.Items, expected)
 
-	imported, err = b.Imported(ctx)
+	imported, err = s.bk.Imported(ctx)
 	c.Assert(err, check.IsNil)
 	c.Assert(imported, check.Equals, true)
 
-	err = b.Import(ctx, items)
+	err = s.bk.Import(ctx, items)
 	fixtures.ExpectAlreadyExists(c, err)
 
-	imported, err = b.Imported(ctx)
+	imported, err = s.bk.Imported(ctx)
 	c.Assert(err, check.IsNil)
 	c.Assert(imported, check.Equals, true)
 }

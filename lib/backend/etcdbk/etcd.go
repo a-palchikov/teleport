@@ -187,7 +187,7 @@ func GetName() string {
 var _ backend.Backend = &EtcdBackend{}
 
 // New returns new instance of Etcd-powered backend
-func New(ctx context.Context, params backend.Params) (*EtcdBackend, error) {
+func New(ctx context.Context, params backend.Params, opts ...Option) (*EtcdBackend, error) {
 	err := utils.RegisterPrometheusCollectors(prometheusCollectors...)
 	if err != nil {
 		return nil, trace.Wrap(err)
@@ -223,6 +223,9 @@ func New(ctx context.Context, params backend.Params) (*EtcdBackend, error) {
 		watchDone: make(chan struct{}),
 		buf:       buf,
 	}
+	for _, opt := range opts {
+		opt(b)
+	}
 
 	// Check that the etcd nodes are at least the minimum version supported
 	if err = b.reconnect(ctx); err != nil {
@@ -253,6 +256,23 @@ func New(ctx context.Context, params backend.Params) (*EtcdBackend, error) {
 
 	// Wrap backend in a input sanitizer and return it.
 	return b, nil
+}
+
+// Option defines a functional option to configure the backend
+type Option func(bk *EtcdBackend)
+
+// WithClock sets the given clock for the backend
+func WithClock(clock clockwork.Clock) Option {
+	return func(bk *EtcdBackend) {
+		bk.clock = clock
+	}
+}
+
+// WithPrefix sets the given prefix for the backend
+func WithPrefix(prefix string) Option {
+	return func(bk *EtcdBackend) {
+		bk.cfg.Key = prefix
+	}
 }
 
 // Validate checks if all the parameters are present/valid

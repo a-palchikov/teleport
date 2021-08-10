@@ -66,22 +66,20 @@ func (s *FirestoreSuite) SetUpSuite(c *check.C) {
 	if !emulatorRunning() {
 		c.Skip("Firestore emulator is not running, start it with: gcloud beta emulators firestore start --host-port=localhost:8618")
 	}
+}
 
-	newBackend := func() (backend.Backend, error) {
-		return New(context.Background(), map[string]interface{}{
-			"collection_name":                   "tp-cluster-data-test",
-			"project_id":                        "tp-testproj",
-			"endpoint":                          "localhost:8618",
-			"purgeExpiredDocumentsPollInterval": time.Second,
-		})
-	}
-	bk, err := newBackend()
+func (s *FirestoreSuite) SetUpTest(c *check.C) {
+	var err error
+	s.bk, err = New(context.Background(), map[string]interface{}{
+		"collection_name":                   "tp-cluster-data-test",
+		"project_id":                        "tp-testproj",
+		"endpoint":                          "localhost:8618",
+		"purgeExpiredDocumentsPollInterval": time.Second,
+	})
 	c.Assert(err, check.IsNil)
-	s.bk = bk.(*Backend)
-	s.suite.B = s.bk
-	s.suite.NewBackend = newBackend
 	clock := clockwork.NewFakeClock()
 	s.bk.clock = clock
+	s.suite.B = s.bk
 	s.suite.Clock = clock
 }
 
@@ -95,22 +93,6 @@ func emulatorRunning() bool {
 }
 
 func (s *FirestoreSuite) TearDownTest(c *check.C) {
-	// Delete all documents.
-	ctx := context.Background()
-	docSnaps, err := s.bk.svc.Collection(s.bk.CollectionName).Documents(ctx).GetAll()
-	c.Assert(err, check.IsNil)
-	if len(docSnaps) == 0 {
-		return
-	}
-	batch := s.bk.svc.Batch()
-	for _, docSnap := range docSnaps {
-		batch.Delete(docSnap.Ref)
-	}
-	_, err = batch.Commit(ctx)
-	c.Assert(err, check.IsNil)
-}
-
-func (s *FirestoreSuite) TearDownSuite(c *check.C) {
 	if s.bk != nil {
 		s.bk.Close()
 	}
