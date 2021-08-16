@@ -164,18 +164,16 @@ func TestProxyClientDisconnectDueToLockInForce(t *testing.T) {
 	mysql, err := testCtx.mysqlClient("alice", "mysql", "root")
 	require.NoError(t, err)
 
-	err = mysql.Ping()
-	require.NoError(t, err)
+	require.NoError(t, mysql.Ping())
 
 	lock, err := types.NewLock("test-lock", types.LockSpecV2{
 		Target: types.LockTarget{User: "alice"},
 	})
 	require.NoError(t, err)
-	testCtx.authServer.UpsertLock(ctx, lock)
+	require.NoError(t, testCtx.authServer.UpsertLock(ctx, lock))
 
 	waitForEvent(t, testCtx, events.ClientDisconnectCode)
-	err = mysql.Ping()
-	require.Error(t, err)
+	require.Error(t, mysql.Ping())
 }
 
 func setConfigClientIdleTimoutAndDisconnectExpiredCert(ctx context.Context, t *testing.T, auth *auth.Server, timeout time.Duration) {
