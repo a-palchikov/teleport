@@ -55,6 +55,7 @@ RUN apt-get update -y --fix-missing && \
         unzip \
         zip \
         zlib1g-dev \
+        dumb-init \
         && \
     pip --no-cache-dir install yamllint && \
     dpkg-reconfigure locales && \

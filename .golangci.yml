@@ -12,7 +12,7 @@ linters:
     - bodyclose
     - deadcode
     - goimports
-    - golint
+    #- revive
     - gosimple
     - govet
     - ineffassign

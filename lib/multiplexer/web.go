@@ -21,7 +21,6 @@ import (
 	"crypto/tls"
 	"io"
 	"net"
-	"sync/atomic"
 	"time"
 
 	"github.com/gravitational/teleport/lib/defaults"
@@ -69,6 +68,7 @@ func NewWebListener(cfg WebListenerConfig) (*WebListener, error) {
 		dbListener:  newListener(context, cfg.Listener.Addr()),
 		cancel:      cancel,
 		context:     context,
+		connCh:      make(chan connResult),
 	}, nil
 }
 
@@ -81,7 +81,7 @@ type WebListener struct {
 	dbListener  *Listener
 	cancel      context.CancelFunc
 	context     context.Context
-	isClosed    int32
+	connCh      chan connResult
 }
 
 // Web returns web listener.
@@ -96,32 +96,47 @@ func (l *WebListener) DB() net.Listener {
 
 // Serve starts accepting and forwarding tls connections to appropriate listeners.
 func (l *WebListener) Serve() error {
+	go l.acceptLoop()
 	backoffTimer := time.NewTicker(5 * time.Second)
 	defer backoffTimer.Stop()
+	var backoffTimerC <-chan time.Time
+	for {
+		select {
+		case conn := <-l.connCh:
+			if conn.err != nil {
+				backoffTimerC = backoffTimer.C
+				continue
+			}
+			tlsConn, ok := conn.conn.(*tls.Conn)
+			if !ok {
+				l.log.Errorf("Expected *tls.Conn, got %T.", conn.conn)
+				conn.conn.Close()
+				continue
+			}
+			backoffTimerC = nil
+			go l.detectAndForward(tlsConn)
+		case <-backoffTimerC:
+			// TODO(dima): what is the purpose of this backoff?
+		case <-l.context.Done():
+			return trace.ConnectionProblem(l.context.Err(), "listener is closed")
+		}
+	}
+}
+
+func (l *WebListener) acceptLoop() {
 	for {
 		conn, err := l.cfg.Listener.Accept()
-		if err != nil {
-			if atomic.LoadInt32(&l.isClosed) == 1 {
-				return trace.ConnectionProblem(nil, "listener is closed")
-			}
-			select {
-			case <-backoffTimer.C:
-				l.log.WithError(err).Warn("Backoff on network error.")
-			case <-l.context.Done():
-				return trace.ConnectionProblem(nil, "listener is closed")
-			}
-			continue
+		select {
+		case l.connCh <- connResult{conn: conn, err: err}:
+		case <-l.context.Done():
+			return
 		}
-
-		tlsConn, ok := conn.(*tls.Conn)
-		if !ok {
-			l.log.Errorf("Expected *tls.Conn, got %T.", conn)
-			conn.Close()
-			continue
-		}
-
-		go l.detectAndForward(tlsConn)
 	}
+}
+
+type connResult struct {
+	conn net.Conn
+	err  error
 }
 
 func (l *WebListener) detectAndForward(conn *tls.Conn) {
@@ -172,8 +187,7 @@ func (l *WebListener) detectAndForward(conn *tls.Conn) {
 //
 // Any blocked Accept operations will be unblocked and return errors.
 func (l *WebListener) Close() error {
-	defer l.cancel()
-	atomic.StoreInt32(&l.isClosed, 1)
+	l.cancel()
 	return l.cfg.Listener.Close()
 }
 

@@ -206,6 +206,24 @@ test: buildbox
 		ssh-agent > external.agent.tmp && source external.agent.tmp; \
 		cd $(SRCDIR) && make TELEPORT_DEBUG=0 FLAGS='-cover -race' clean test"
 
+.PHONY:test-dev-orig
+test-dev-orig: buildbox
+	docker run \
+		--env TELEPORT_ETCD_TEST="yes" \
+		$(DOCKERFLAGS) $(NOROOT) -t $(BUILDBOX) \
+		/usr/bin/dumb-init /bin/bash -c \
+		"type gcloud 2>&1 >/dev/null || exit 1; \
+		gcloud -q beta emulators firestore start --host-port=localhost:8618 & sleep 1; \
+		ssh-agent > external.agent.tmp && source external.agent.tmp; \
+		cd $(SRCDIR) && make TELEPORT_DEBUG=0 FLAGS='-v -cover -race -count=2 -run=TestAccessMongoDB' PACKAGES=./lib/srv/db/... test-go"
+
+.PHONY:test-dev
+test-dev: buildbox
+	docker run \
+		$(DOCKERFLAGS) $(NOROOT) -t $(BUILDBOX) \
+		/usr/bin/dumb-init /bin/bash -c \
+		"cd $(SRCDIR) && make TELEPORT_DEBUG=0 FLAGS='-v -count=1 -run=\"TestAuditMongo\"' PACKAGES=./lib/srv/db/... test-go"
+
 .PHONY:test
 test-root: buildbox
 	docker run \

@@ -20,6 +20,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand"
@@ -331,7 +332,7 @@ func (s *ProxyServer) Connect(ctx context.Context, user, database string) (net.C
 // Implements common.Service.
 func (s *ProxyServer) Proxy(ctx context.Context, authContext *auth.Context, clientConn, serviceConn net.Conn) error {
 	// Wrap a client connection into monitor that auto-terminates
-	// idle connection and connection with expired cert.
+	// idle connection and connections with expired certificates.
 	tc, err := monitorConn(ctx, monitorConnConfig{
 		conn:         clientConn,
 		lockWatcher:  s.cfg.LockWatcher,
@@ -367,10 +368,10 @@ func (s *ProxyServer) Proxy(ctx context.Context, authContext *auth.Context, clie
 		errCh <- err
 	}()
 	var errs []error
-	for i := 0; i < 2; i++ {
+	for i := 0; i < cap(errCh); i++ {
 		select {
 		case err := <-errCh:
-			if err != nil && !utils.IsOKNetworkError(err) {
+			if err != nil && !utils.IsOKNetworkError(err) && !errors.Is(err, net.ErrClosed) {
 				s.log.WithError(err).Warn("Connection problem.")
 				errs = append(errs, err)
 			}

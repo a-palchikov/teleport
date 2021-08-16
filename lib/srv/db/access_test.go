@@ -19,6 +19,7 @@ package db
 import (
 	"context"
 	"crypto/tls"
+	"fmt"
 	"net"
 	"os"
 	"sort"
@@ -633,11 +634,16 @@ func setupTestContext(ctx context.Context, t *testing.T, withDatabases ...withDa
 	}
 	t.Cleanup(func() { testCtx.Close() })
 
+	sessionsDir := t.TempDir()
+	// sessionsDir, err := ioutil.TempDir("", "testcontext")
+	// require.NoError(t, err)
+	fmt.Println("Test context directory: ", sessionsDir)
+
 	// Create and start test auth server.
 	authServer, err := auth.NewTestAuthServer(auth.TestAuthServerConfig{
 		Clock:       clockwork.NewFakeClockAt(time.Now()),
 		ClusterName: testCtx.clusterName,
-		Dir:         t.TempDir(),
+		Dir:         sessionsDir,
 	})
 	require.NoError(t, err)
 	testCtx.tlsServer, err = authServer.NewTestTLSServer()

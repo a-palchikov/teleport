@@ -62,7 +62,7 @@ func (e *Engine) connect(ctx context.Context, sessionCtx *common.Session) (drive
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
-	e.Log.Debugf("Cluster topology: %v, selected server %v.", top, server)
+	e.Log.Debugf("Cluster topology (%v), selected server(%v).", top, server)
 	conn, err := server.Connection(ctx)
 	if err != nil {
 		return nil, trace.Wrap(err)

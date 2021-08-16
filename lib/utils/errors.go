@@ -17,9 +17,10 @@ limitations under the License.
 package utils
 
 import (
-	"strings"
+	"errors"
+	"io"
+	"net"
 
-	"github.com/gravitational/teleport/api/constants"
 	"github.com/gravitational/trace"
 )
 
@@ -27,14 +28,15 @@ import (
 // indicates the use of closed network connection
 // TODO(dmitri): replace in go1.16 with `errors.Is(err, net.ErrClosed)`
 func IsUseOfClosedNetworkError(err error) bool {
-	if err == nil {
-		return false
-	}
-	return strings.Contains(err.Error(), constants.UseOfClosedNetworkConnection)
+	return errors.Is(err, net.ErrClosed)
+}
+
+func IsClosedPipeError(err error) bool {
+	return errors.Is(err, io.ErrClosedPipe)
 }
 
 // IsOKNetworkError returns true if the provided error received from a network
 // operation is one of those that usually indicate normal connection close.
 func IsOKNetworkError(err error) bool {
-	return trace.IsEOF(err) || IsUseOfClosedNetworkError(err)
+	return trace.IsEOF(err) || IsUseOfClosedNetworkError(err) || IsClosedPipeError(err)
 }

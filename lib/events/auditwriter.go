@@ -18,6 +18,8 @@ package events
 
 import (
 	"context"
+	"errors"
+	"io"
 	"sync"
 	"time"
 
@@ -475,7 +477,7 @@ func (a *AuditWriter) closeStream(stream apievents.Stream) {
 func (a *AuditWriter) completeStream(stream apievents.Stream) {
 	ctx, cancel := context.WithTimeout(a.cfg.Context, defaults.NetworkBackoffDuration)
 	defer cancel()
-	if err := stream.Complete(ctx); err != nil {
+	if err := stream.Complete(ctx); err != nil && !errors.Is(err, io.EOF) {
 		a.log.WithError(err).Warning("Failed to complete stream.")
 	}
 }

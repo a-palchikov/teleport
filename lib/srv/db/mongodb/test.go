@@ -19,7 +19,11 @@ package mongodb
 import (
 	"context"
 	"crypto/tls"
+	"fmt"
 	"net"
+	"os"
+	"runtime/debug"
+	"strings"
 	"time"
 
 	"github.com/gravitational/teleport/lib/defaults"
@@ -100,15 +104,31 @@ func NewTestServer(config common.TestServerConfig) (*TestServer, error) {
 	}, nil
 }
 
+func isTooManyOpenFilesError(err error) bool {
+	return strings.Contains(err.Error(), "too many open files")
+}
+
 // Serve starts serving client connections.
 func (s *TestServer) Serve() error {
 	s.log.Debugf("Starting test MongoDB server on %v.", s.listener.Addr())
 	defer s.log.Debug("Test MongoDB server stopped.")
+
+	f, err := os.Create("/Users/dshelenin/dev/go/github.com/gravitational/teleport/test-stop.log")
+	if err != nil {
+		return trace.Wrap(err, "failed to create test log file")
+	}
+	defer f.Close()
+
 	for {
 		conn, err := s.listener.Accept()
 		if err != nil {
 			if utils.IsOKNetworkError(err) {
 				return nil
+			}
+			if isTooManyOpenFilesError(err) {
+				fmt.Fprint(f, "too many open files:", string(debug.Stack()))
+				f.Close()
+				time.Sleep(1 * time.Hour)
 			}
 			s.log.WithError(err).Error("Failed to accept connection.")
 			continue
