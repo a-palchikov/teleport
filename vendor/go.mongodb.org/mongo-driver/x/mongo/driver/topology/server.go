@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"runtime/debug"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -143,6 +144,7 @@ func ConnectServer(addr address.Address, updateCallback updateTopologyCallback, 
 // NewServer creates a new server. The mongodb server at the address will be monitored
 // on an internal monitoring goroutine.
 func NewServer(addr address.Address, topologyID primitive.ObjectID, opts ...ServerOption) (*Server, error) {
+	fmt.Printf("NewServer at %s, topology %v.\n%s", addr, topologyID, debug.Stack())
 	cfg, err := newServerConfig(opts...)
 	if err != nil {
 		return nil, err
@@ -163,7 +165,8 @@ func NewServer(addr address.Address, topologyID primitive.ObjectID, opts ...Serv
 		globalCtx:       globalCtx,
 		globalCtxCancel: globalCtxCancel,
 	}
-	s.desc.Store(description.NewDefaultServer(addr))
+	// s.desc.Store(description.NewDefaultServer(addr))
+	s.desc.Store(description.NewDefaultServerWithTopologyID(addr, topologyID.String()))
 	rttCfg := &rttConfig{
 		interval:           cfg.heartbeatInterval,
 		createConnectionFn: s.createConnection,
@@ -193,15 +196,19 @@ func NewServer(addr address.Address, topologyID primitive.ObjectID, opts ...Serv
 // Connect initializes the Server by starting background monitoring goroutines.
 // This method must be called before a Server can be used.
 func (s *Server) Connect(updateCallback updateTopologyCallback) error {
+	fmt.Println("Connect to server at ", s.address, "(", s.topologyID.String(), ").")
 	if !atomic.CompareAndSwapInt32(&s.connectionstate, disconnected, connected) {
+		fmt.Println("Connect: ErrorServerConnect.")
 		return ErrServerConnected
 	}
-	s.desc.Store(description.NewDefaultServer(s.address))
+	// s.desc.Store(description.NewDefaultServer(s.address))
+	s.desc.Store(description.NewDefaultServerWithTopologyID(s.address, s.topologyID.String()))
 	s.updateTopologyCallback.Store(updateCallback)
 
 	if !s.cfg.monitoringDisabled {
 		s.rttMonitor.connect()
 		s.closewg.Add(1)
+		fmt.Println("Startung update loop for server at ", s.address, "(", s.topologyID.String(), ").")
 		go s.update()
 	}
 	return s.pool.connect()
@@ -281,7 +288,8 @@ func (s *Server) ProcessHandshakeError(err error, startingGenerationNumber uint6
 	// Since the only kind of ConnectionError we receive from pool.Get will be an initialization error, we should set
 	// the description.Server appropriately. The description should not have a TopologyVersion because the staleness
 	// checking logic above has already determined that this description is not stale.
-	s.updateDescription(description.NewServerFromError(s.address, wrappedConnErr, nil))
+	// s.updateDescription(description.NewServerFromError(s.address, wrappedConnErr, nil))
+	s.updateDescription(description.NewServerFromErrorAndID(s.address, wrappedConnErr, nil, s.topologyID.String()))
 	s.pool.clear()
 	s.cancelCheck()
 }
@@ -379,7 +387,8 @@ func (s *Server) ProcessError(err error, conn driver.Connection) driver.ProcessE
 		}
 
 		// updates description to unknown
-		s.updateDescription(description.NewServerFromError(s.address, err, cerr.TopologyVersion))
+		// s.updateDescription(description.NewServerFromError(s.address, err, cerr.TopologyVersion))
+		s.updateDescription(description.NewServerFromErrorAndID(s.address, err, cerr.TopologyVersion, s.topologyID.String()))
 		s.RequestImmediateCheck()
 
 		res := driver.ServerMarkedUnknown
@@ -397,7 +406,8 @@ func (s *Server) ProcessError(err error, conn driver.Connection) driver.ProcessE
 		}
 
 		// updates description to unknown
-		s.updateDescription(description.NewServerFromError(s.address, err, wcerr.TopologyVersion))
+		// s.updateDescription(description.NewServerFromError(s.address, err, wcerr.TopologyVersion))
+		s.updateDescription(description.NewServerFromErrorAndID(s.address, err, wcerr.TopologyVersion, s.topologyID.String()))
 		s.RequestImmediateCheck()
 
 		res := driver.ServerMarkedUnknown
@@ -425,7 +435,8 @@ func (s *Server) ProcessError(err error, conn driver.Connection) driver.ProcessE
 	// For a non-timeout network error, we clear the pool, set the description to Unknown, and cancel the in-progress
 	// monitoring check. The check is cancelled last to avoid a post-cancellation reconnect racing with
 	// updateDescription.
-	s.updateDescription(description.NewServerFromError(s.address, err, nil))
+	// s.updateDescription(description.NewServerFromError(s.address, err, nil))
+	s.updateDescription(description.NewServerFromErrorAndID(s.address, err, nil, s.topologyID.String()))
 	s.pool.clear()
 	s.cancelCheck()
 	return driver.ConnectionPoolCleared
@@ -434,6 +445,7 @@ func (s *Server) ProcessError(err error, conn driver.Connection) driver.ProcessE
 // update handles performing heartbeats and updating any subscribers of the
 // newest description.Server retrieved.
 func (s *Server) update() {
+	fmt.Println("In update loop for server at ", s.address, "(", s.topologyID.String(), ")")
 	defer s.closewg.Done()
 	heartbeatTicker := time.NewTicker(s.cfg.heartbeatInterval)
 	rateLimiter := time.NewTicker(minHeartbeatInterval)
@@ -445,12 +457,14 @@ func (s *Server) update() {
 	var doneOnce bool
 	defer func() {
 		if r := recover(); r != nil {
+			fmt.Println("Update loop for server at ", s.address, "(", s.topologyID.String(), "): panic:", r)
 			if doneOnce {
 				return
 			}
 			// We keep this goroutine alive attempting to read from the done channel.
 			<-done
 		}
+		fmt.Println("Update loop for server at ", s.address, "(", s.topologyID.String(), ") done.")
 	}()
 
 	closeServer := func() {
@@ -495,14 +509,18 @@ func (s *Server) update() {
 		select {
 		case <-done:
 			closeServer()
+			fmt.Println("Update loop for server at ", s.address, "(", s.topologyID.String(), ") received done.")
 			return
 		default:
+			fmt.Println("Update loop for server at ", s.address, "(", s.topologyID.String(), ") done not signaled.")
 		}
 
 		previousDescription := s.Description()
 
+		fmt.Println("Update loop for server at ", s.address, "(", s.topologyID.String(), "): entering check.")
 		// Perform the next check.
 		desc, err := s.check()
+		fmt.Println("Re-running server check for ", s.address, "(", s.topologyID.String(), "), err:", err)
 		if err == errCheckCancelled {
 			if atomic.LoadInt32(&s.connectionstate) != connected {
 				continue
@@ -543,9 +561,13 @@ func (s *Server) update() {
 // parameter is used to determine if this is the first description from the
 // server.
 func (s *Server) updateDescription(desc description.Server) {
+	fmt.Println("updateDescription: ", desc.String(), " at ", string(debug.Stack()))
 	defer func() {
 		//  ¯\_(ツ)_/¯
-		_ = recover()
+		//_ = recover()
+		if err := recover(); err != nil {
+			fmt.Println("fuck:", err)
+		}
 	}()
 
 	// Use the updateTopologyCallback to update the parent Topology and get the description that should be stored.
@@ -553,6 +575,10 @@ func (s *Server) updateDescription(desc description.Server) {
 	if ok && callback != nil {
 		desc = callback(desc)
 	}
+
+	// TODO(dima):
+	desc.ID = s.topologyID.String()
+
 	s.desc.Store(desc)
 
 	s.subLock.Lock()
@@ -723,6 +749,7 @@ func (s *Server) check() (description.Server, error) {
 		desc := *descPtr
 		desc = desc.SetAverageRTT(s.rttMonitor.getRTT())
 		desc.HeartbeatInterval = s.cfg.heartbeatInterval
+		desc.ID = s.topologyID.String()
 		return desc, nil
 	}
 
@@ -736,7 +763,8 @@ func (s *Server) check() (description.Server, error) {
 	// be cleared, but only after the description has already been updated, so that is handled by the caller.
 	topologyVersion := extractTopologyVersion(err)
 	s.rttMonitor.reset()
-	return description.NewServerFromError(s.address, err, topologyVersion), nil
+	// return description.NewServerFromError(s.address, err, topologyVersion), nil
+	return description.NewServerFromErrorAndID(s.address, err, topologyVersion, s.topologyID.String()), nil
 }
 
 func extractTopologyVersion(err error) *description.TopologyVersion {

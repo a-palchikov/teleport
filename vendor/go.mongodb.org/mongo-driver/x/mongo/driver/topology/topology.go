@@ -174,6 +174,7 @@ func (t *Topology) Connect() error {
 		Kind:                  t.fsm.Kind,
 		Servers:               t.fsm.Servers,
 		SessionTimeoutMinutes: t.fsm.SessionTimeoutMinutes,
+		ID:                    t.id.String(),
 	}
 	t.desc.Store(newDesc)
 	t.publishTopologyDescriptionChangedEvent(description.Topology{}, t.fsm.Topology)
@@ -212,7 +213,8 @@ func (t *Topology) Disconnect(ctx context.Context) error {
 	}
 	t.serversLock.Unlock()
 
-	for _, server := range servers {
+	for addr, server := range servers {
+		fmt.Println("Disconnect server at ", addr)
 		_ = server.Disconnect(ctx)
 		t.publishServerClosedEvent(server.address)
 	}
@@ -230,6 +232,7 @@ func (t *Topology) Disconnect(ctx context.Context) error {
 		t.pollingwg.Wait()
 	}
 
+	fmt.Println("Reset topology ", t.id.String())
 	t.desc.Store(description.Topology{})
 
 	atomic.StoreInt32(&t.connectionstate, disconnected)
@@ -581,6 +584,7 @@ func (t *Topology) processSRVResults(parsedHosts []string) bool {
 			cancel()
 			_ = s.Disconnect(cancelCtx)
 		}()
+		fmt.Printf("Removed server at %s for %s (processSRVResults).\n", addr, t.id.String())
 		delete(t.servers, addr)
 		t.fsm.removeServerByAddr(addr)
 		t.publishServerClosedEvent(s.address)
@@ -595,6 +599,7 @@ func (t *Topology) processSRVResults(parsedHosts []string) bool {
 		Kind:                  t.fsm.Kind,
 		Servers:               t.fsm.Servers,
 		SessionTimeoutMinutes: t.fsm.SessionTimeoutMinutes,
+		ID:                    t.id.String(),
 	}
 	t.desc.Store(newDesc)
 
@@ -640,6 +645,8 @@ func (t *Topology) apply(ctx context.Context, desc description.Server) descripti
 	if err != nil {
 		return desc
 	}
+	// TODO(dima)
+	current.ID = t.id.String()
 
 	if !oldDesc.Equal(desc) {
 		t.publishServerDescriptionChangedEvent(oldDesc, desc)
@@ -654,6 +661,7 @@ func (t *Topology) apply(ctx context.Context, desc description.Server) descripti
 				cancel()
 				_ = s.Disconnect(cancelCtx)
 			}()
+			fmt.Printf("Removed server at %s for %s (apply).", removed.Addr, t.id.String())
 			delete(t.servers, removed.Addr)
 			t.publishServerClosedEvent(s.address)
 		}
@@ -692,6 +700,7 @@ func (t *Topology) addServer(addr address.Address) error {
 		return err
 	}
 
+	fmt.Println("addServer: storing new server: ", svr.Description().String())
 	t.servers[addr] = svr
 
 	return nil

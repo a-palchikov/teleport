@@ -222,7 +222,7 @@ test-dev: buildbox
 	docker run \
 		$(DOCKERFLAGS) $(NOROOT) -t $(BUILDBOX) \
 		/usr/bin/dumb-init /bin/bash -c \
-		"cd $(SRCDIR) && make TELEPORT_DEBUG=0 FLAGS='-v -count=1 -run=\"TestAuditMongo\"' PACKAGES=./lib/srv/db/... test-go"
+		"cd $(SRCDIR) && make TELEPORT_DEBUG=0 FLAGS='-v -count=1' PACKAGES=./lib/srv/db/... test-go"
 
 .PHONY:test
 test-root: buildbox

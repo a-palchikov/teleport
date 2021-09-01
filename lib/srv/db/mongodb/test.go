@@ -83,6 +83,7 @@ func NewTestServer(config common.TestServerConfig) (*TestServer, error) {
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
+	fmt.Println("NewTestServer at ", listener.Addr().String())
 	_, port, err := net.SplitHostPort(listener.Addr().String())
 	if err != nil {
 		return nil, trace.Wrap(err)
@@ -150,6 +151,7 @@ func (s *TestServer) Serve() error {
 // handleConnection receives Mongo wire messages from the client connection
 // and sends back the response messages.
 func (s *TestServer) handleConnection(conn net.Conn) error {
+	fmt.Println("handleConnection:", string(debug.Stack()))
 	// Read client messages and reply to them - test server supports a very
 	// basic set of commands: "isMaster", "authenticate", "ping" and "find".
 	for {
@@ -174,8 +176,10 @@ func (s *TestServer) handleMessage(message protocol.Message) (protocol.Message, 
 	case *protocol.MessageOpQuery:
 		switch getCommandType(m.Query) {
 		case commandIsMaster: // isMaster command can come as both OP_QUERY and OP_MSG
+			fmt.Println("handleMessage(query): isMaster.")
 			return s.handleIsMaster(message)
 		case commandAuth:
+			fmt.Println("handleMessage: auth.")
 			return s.handleAuth(m)
 		}
 	case *protocol.MessageOpMsg:
@@ -185,10 +189,13 @@ func (s *TestServer) handleMessage(message protocol.Message) (protocol.Message, 
 		}
 		switch getCommandType(document) {
 		case commandIsMaster: // isMaster command can come as both OP_QUERY and OP_MSG
+			fmt.Println("handleMessage(msg): isMaster.")
 			return s.handleIsMaster(m)
 		case commandPing:
+			fmt.Println("handleMessage(msg): ping.")
 			return s.handlePing(m)
 		case commandFind:
+			fmt.Println("handleMessage(msg): find.")
 			return s.handleFind(m)
 		}
 	}
@@ -217,6 +224,7 @@ func (s *TestServer) handleAuth(message protocol.Message) (protocol.Message, err
 // isMaster command is used as a handshake by the client to determine the
 // cluster topology.
 func (s *TestServer) handleIsMaster(message protocol.Message) (protocol.Message, error) {
+	fmt.Println("handleIsMaster:", string(debug.Stack()))
 	isMasterReply, err := makeIsMasterReply()
 	if err != nil {
 		return nil, trace.Wrap(err)

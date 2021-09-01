@@ -423,6 +423,8 @@ func TestCompatibilityWithOldAgents(t *testing.T) {
 	databaseServer := testCtx.setupDatabaseServer(ctx, t, resource)
 	go func() {
 		for conn := range testCtx.proxyConn {
+			fmt.Printf("Recv proxy connection: remote %v, local %v.\n",
+				conn.RemoteAddr().String(), conn.LocalAddr().String())
 			go databaseServer.HandleConnection(conn)
 		}
 	}()

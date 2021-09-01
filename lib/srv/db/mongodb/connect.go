@@ -19,10 +19,13 @@ package mongodb
 import (
 	"context"
 	"crypto/tls"
+	"fmt"
 	"net/url"
+	"runtime/debug"
 	"time"
 
 	"github.com/gravitational/teleport/lib/srv/db/common"
+	"github.com/sirupsen/logrus"
 
 	"go.mongodb.org/mongo-driver/mongo/address"
 	"go.mongodb.org/mongo-driver/mongo/description"
@@ -41,7 +44,7 @@ import (
 // When connecting to a replica set, returns connection to the server selected
 // based on the read preference connection string option. This allows users to
 // configure database access to always connect to a secondary for example.
-func (e *Engine) connect(ctx context.Context, sessionCtx *common.Session) (driver.Connection, error) {
+func (e *Engine) connect(ctx context.Context, sessionCtx *common.Session) (conn *connection, err error) {
 	options, selector, err := e.getTopologyOptions(ctx, sessionCtx)
 	if err != nil {
 		return nil, trace.Wrap(err)
@@ -58,16 +61,35 @@ func (e *Engine) connect(ctx context.Context, sessionCtx *common.Session) (drive
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
+	defer func() {
+		if err != nil {
+			fmt.Println("Failed to connect: ", err)
+			top.Disconnect(context.TODO())
+		}
+	}()
+	fmt.Println("Selecting server from:", string(debug.Stack()))
 	server, err := top.SelectServer(ctx, selector)
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
 	e.Log.Debugf("Cluster topology (%v), selected server(%v).", top, server)
-	conn, err := server.Connection(ctx)
+	serverConn, err := server.Connection(ctx)
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
-	return conn, nil
+	return &connection{conn: serverConn, t: top}, nil
+}
+
+func (r *connection) Close() error {
+	if err := r.conn.Close(); err != nil {
+		logrus.WithError(err).Warn("Failed to close server connection.")
+	}
+	return r.t.Disconnect(context.TODO())
+}
+
+type connection struct {
+	conn driver.Connection
+	t    *topology.Topology
 }
 
 // getTopologyOptions constructs topology options for connecting to a MongoDB server.
@@ -155,6 +177,7 @@ func getConnectionString(sessionCtx *common.Session) (connstring.ConnString, err
 	case connstring.SchemeMongoDB, connstring.SchemeMongoDBSRV:
 		return connstring.ParseAndValidate(sessionCtx.Database.GetURI())
 	}
+	fmt.Println("getConnectionString: hosts=", sessionCtx.Database.GetURI())
 	return connstring.ConnString{Hosts: []string{sessionCtx.Database.GetURI()}}, nil
 }
 

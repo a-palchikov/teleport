@@ -434,7 +434,7 @@ func (a *AuditWriter) processEvents() {
 			a.log.Debugf("Recovered stream in %v.", time.Since(start))
 		case <-a.stream.Done():
 			a.log.Debugf("Stream was closed by the server, attempting to recover.")
-			if err := a.recoverStream(); err != nil {
+			if err := a.recoverStream(); err != nil && !errors.Is(trace.Unwrap(err), context.Canceled) {
 				a.log.WithError(err).Warningf("Failed to recover stream.")
 				a.cancel()
 				return
@@ -469,7 +469,7 @@ func (a *AuditWriter) recoverStream() error {
 func (a *AuditWriter) closeStream(stream apievents.Stream) {
 	ctx, cancel := context.WithTimeout(a.cfg.Context, defaults.NetworkRetryDuration)
 	defer cancel()
-	if err := stream.Close(ctx); err != nil {
+	if err := stream.Close(ctx); err != nil && !errors.Is(err, io.EOF) {
 		a.log.WithError(err).Debug("Failed to close stream.")
 	}
 }

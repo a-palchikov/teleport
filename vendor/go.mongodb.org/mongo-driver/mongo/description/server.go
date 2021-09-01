@@ -9,6 +9,7 @@ package description
 import (
 	"errors"
 	"fmt"
+	"runtime/debug"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
@@ -28,6 +29,9 @@ type SelectedServer struct {
 // Server contains information about a node in a cluster. This is created from isMaster command responses.
 type Server struct {
 	Addr address.Address
+	// TODO(dima)
+	// topology ID
+	ID string
 
 	Arbiters              []string
 	AverageRTT            time.Duration
@@ -57,8 +61,12 @@ type Server struct {
 }
 
 // NewServer creates a new server description from the given isMaster command response.
-func NewServer(addr address.Address, response bson.Raw) Server {
-	desc := Server{Addr: addr, CanonicalAddr: addr, LastUpdateTime: time.Now().UTC()}
+func NewServer(addr address.Address, response bson.Raw) (desc Server) {
+	fmt.Printf("NewServer: addr=%v (%s)\n%s\n", addr, response, debug.Stack())
+	defer func() {
+		fmt.Println("NewServer returned server: ", desc.String())
+	}()
+	desc = Server{Addr: addr, CanonicalAddr: addr, LastUpdateTime: time.Now().UTC()}
 	elements, err := response.Elements()
 	if err != nil {
 		desc.LastError = err
@@ -302,6 +310,20 @@ func NewDefaultServer(addr address.Address) Server {
 	return NewServerFromError(addr, nil, nil)
 }
 
+func NewDefaultServerWithTopologyID(addr address.Address, id string) Server {
+	return NewServerFromErrorAndID(addr, nil, nil, id)
+}
+
+func NewServerFromErrorAndID(addr address.Address, err error, tv *TopologyVersion, id string) Server {
+	return Server{
+		Addr:            addr,
+		LastError:       err,
+		Kind:            Unknown,
+		TopologyVersion: tv,
+		ID:              id,
+	}
+}
+
 // NewServerFromError creates a new unknown server description with the given parameters.
 func NewServerFromError(addr address.Address, err error, tv *TopologyVersion) Server {
 	return Server{
@@ -329,8 +351,8 @@ func (s Server) DataBearing() bool {
 
 // String implements the Stringer interface
 func (s Server) String() string {
-	str := fmt.Sprintf("Addr: %s, Type: %s",
-		s.Addr, s.Kind)
+	str := fmt.Sprintf("Addr: %s, Type: %s, TopID: %s",
+		s.Addr, s.Kind, s.ID)
 	if len(s.Tags) != 0 {
 		str += fmt.Sprintf(", Tag sets: %s", s.Tags)
 	}

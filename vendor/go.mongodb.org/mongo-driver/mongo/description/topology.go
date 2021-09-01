@@ -19,6 +19,7 @@ type Topology struct {
 	Kind                  TopologyKind
 	SessionTimeoutMinutes uint32
 	CompatibilityErr      error
+	ID                    string
 }
 
 // String implements the Stringer interface.
@@ -27,7 +28,7 @@ func (t Topology) String() string {
 	for _, s := range t.Servers {
 		serversStr += "{ " + s.String() + " }, "
 	}
-	return fmt.Sprintf("Type: %s, Servers: [%s]", t.Kind, serversStr)
+	return fmt.Sprintf("Type: %s, Servers: [%s], ID: %s", t.Kind, serversStr, t.ID)
 }
 
 // Equal compares two topology descriptions and returns true if they are equal.
@@ -58,7 +59,8 @@ func (t Topology) Equal(other Topology) bool {
 		}
 	}
 
-	return true
+	// return true
+	return t.ID == other.ID
 }
 
 // HasReadableServer returns true if the topology contains a server suitable for reading.

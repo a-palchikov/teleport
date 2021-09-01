@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+
+	"github.com/gravitational/trace/internal"
 )
 
 // WriteError sets up HTTP error response and writes it to writer w
@@ -12,7 +14,7 @@ func WriteError(w http.ResponseWriter, err error) {
 		replyJSON(w, ErrorToCode(err), err)
 		return
 	}
-	for i := 0; i < maxHops; i++ {
+	for i := 0; i < internal.MaxHops; i++ {
 		var aggErr Aggregate
 		var ok bool
 		if aggErr, ok = Unwrap(err).(Aggregate); !ok {
@@ -79,9 +81,9 @@ func ReadError(statusCode int, respBytes []byte) error {
 	case http.StatusGatewayTimeout:
 		err = &ConnectionProblemError{}
 	default:
-		err = &RawTrace{}
+		err = &internal.RawTrace{}
 	}
-	return wrapProxy(unmarshalError(err, respBytes))
+	return internal.WrapProxy(unmarshalError(err, respBytes))
 }
 
 func replyJSON(w http.ResponseWriter, code int, err error) {
@@ -105,21 +107,21 @@ func unmarshalError(err error, responseBody []byte) error {
 	if len(responseBody) == 0 {
 		return err
 	}
-	var raw RawTrace
+	var raw internal.RawTrace
 	if err2 := json.Unmarshal(responseBody, &raw); err2 != nil {
 		return err
 	}
-	if len(raw.Err) != 0 {
+	if len(raw.Traces) != 0 && len(raw.Err) != 0 {
 		err2 := json.Unmarshal(raw.Err, err)
 		if err2 != nil {
 			return err
 		}
 		return &TraceErr{
-			Traces:   raw.Traces,
 			Err:      err,
 			Message:  raw.Message,
 			Messages: raw.Messages,
 			Fields:   raw.Fields,
+			Traces:   raw.Traces,
 		}
 	}
 	json.Unmarshal(responseBody, err)

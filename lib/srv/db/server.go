@@ -311,7 +311,10 @@ func (s *Server) Wait() error {
 // upgrades it to TLS, extracts identity information from it, performs
 // authorization and dispatches to the appropriate database engine.
 func (s *Server) HandleConnection(conn net.Conn) {
-	log := s.log.WithField("addr", conn.RemoteAddr())
+	log := s.log.WithFields(logrus.Fields{
+		"remote-addr": conn.RemoteAddr(),
+		"local-addr":  conn.LocalAddr(),
+	})
 	log.Debug("Accepted connection.")
 	// Upgrade the connection to TLS since the other side of the reverse
 	// tunnel connection (proxy) will initiate a handshake.
@@ -322,6 +325,7 @@ func (s *Server) HandleConnection(conn net.Conn) {
 	// Perform the hanshake explicitly, normally it should be performed
 	// on the first read/write but when the connection is passed over
 	// reverse tunnel it doesn't happen for some reason.
+	log.Info("Performing TLS handshake.")
 	err := tlsConn.Handshake()
 	if err != nil {
 		log.WithError(err).Error("Failed to perform TLS handshake.")
@@ -336,6 +340,7 @@ func (s *Server) HandleConnection(conn net.Conn) {
 	}
 	// Dispatch the connection for processing by an appropriate database
 	// service.
+	log.Info("Dispatching connection.")
 	err = s.handleConnection(ctx, tlsConn)
 	if err != nil && !utils.IsOKNetworkError(err) && !trace.IsAccessDenied(err) {
 		log.WithError(err).Error("Failed to handle connection.")

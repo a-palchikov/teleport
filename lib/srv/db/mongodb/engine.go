@@ -87,7 +87,7 @@ func (e *Engine) HandleConnection(ctx context.Context, sessionCtx *common.Sessio
 		if err != nil {
 			return trace.Wrap(err)
 		}
-		err = e.handleClientMessage(ctx, sessionCtx, clientMessage, clientConn, serverConn)
+		err = e.handleClientMessage(ctx, sessionCtx, clientMessage, clientConn, serverConn.conn)
 		if err != nil {
 			return trace.Wrap(err)
 		}

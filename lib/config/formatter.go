@@ -337,7 +337,7 @@ type frameCursor struct {
 func formatCallerWithPathAndLine() (path string) {
 	if cursor := findFrame(); cursor != nil {
 		t := newTraceFromFrames(*cursor, nil)
-		return t.Loc()
+		return t.Traces.Loc()
 	}
 	return ""
 }

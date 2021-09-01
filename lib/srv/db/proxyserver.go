@@ -214,6 +214,7 @@ func (s *ProxyServer) ServeTLS(listener net.Listener) error {
 			}
 			return trace.Wrap(err)
 		}
+		fmt.Println("DB proxy, accept conn: remote=", clientConn.RemoteAddr().String(), ", local=", clientConn.LocalAddr().String())
 		go func() {
 			defer clientConn.Close()
 			err := s.handleConnection(clientConn)
